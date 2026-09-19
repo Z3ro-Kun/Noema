@@ -2,7 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Preferences from './Preferences'
-import { setSessionToken } from '../api/library'
+import { setSessionToken } from '../api/client'
+import { resetSessionForTests, setAuthenticatedForTests } from '../auth/session'
 import type {
   ConfidenceBand,
   ContributingWork,
@@ -175,14 +176,15 @@ function mockApi(body: PreferenceOverview | null, status = 200) {
 }
 
 async function renderSignedIn(body: PreferenceOverview | null, status = 200) {
-  setSessionToken('test-token')
+  setAuthenticatedForTests(USER.email)
   vi.stubGlobal('fetch', mockApi(body, status))
-  render(<Preferences onBack={() => {}} />)
+  render(<Preferences onBack={() => {}} onSignIn={() => {}} />)
   if (body) await screen.findByText(/Noema builds these signals/)
 }
 
 describe('Preferences page', () => {
   beforeEach(() => {
+    resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
@@ -192,18 +194,20 @@ describe('Preferences page', () => {
   it('asks for credentials before showing any evidence', async () => {
     vi.stubGlobal('fetch', mockApi(CASE_A))
 
-    render(<Preferences onBack={() => {}} />)
+    render(<Preferences onBack={() => {}} onSignIn={() => {}} />)
 
-    expect(await screen.findByLabelText('Email')).toBeInTheDocument()
+    // A prompt pointing at the Login page, not a second login form.
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
     expect(screen.queryByText('Psychological Depth')).not.toBeInTheDocument()
   })
 
   it('sends the session token and never a user identifier', async () => {
-    setSessionToken('test-token')
+    setAuthenticatedForTests(USER.email)
     const fetchMock = mockApi(CASE_A)
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<Preferences onBack={() => {}} />)
+    render(<Preferences onBack={() => {}} onSignIn={() => {}} />)
     await screen.findByText('Psychological Depth')
 
     const call = fetchMock.mock.calls.find(([url]) =>

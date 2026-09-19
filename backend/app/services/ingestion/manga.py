@@ -25,7 +25,7 @@ the single `manhwa` domain that covers the combined V1 category.
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from app.services.ingestion.anime import _clean_text, _format_date
+from app.services.ingestion.anime import _clean_text, _format_date, cover_image
 from app.services.ingestion.normalized import (
     SourceContainer,
     SourceCreator,
@@ -58,7 +58,17 @@ class AniListMangaAdapter:
             raise ValueError("AniList payload has no id; cannot build a stable source_ref")
 
         titles = media.get("title") or {}
-        title = titles.get("romaji") or titles.get("english") or titles.get("native")
+        # AniList gives three titles and they are not interchangeable.
+        # English first: it is the name a reader of this product is most
+        # likely to recognise, and preferring romaji meant a Korean webtoon
+        # arrived as "Na Honjaman Level Up" when AniList had "Solo Leveling"
+        # on file the whole time. Romaji is the fallback because it is always
+        # present in practice; native is the last resort.
+        #
+        # This is presentation only. The native title is kept verbatim as
+        # `original_title`, all three stay in `extra_metadata.anilist.titles`,
+        # and `source_ref` -- not the title -- is what identifies the work.
+        title = titles.get("english") or titles.get("romaji") or titles.get("native")
         if not title:
             raise ValueError(f"AniList media {anilist_id} has no usable title")
 
@@ -169,8 +179,13 @@ class AniListMangaAdapter:
         media = self.media
         titles = media.get("title") or {}
         country = media.get("countryOfOrigin")
+        cover_url, cover_provenance = cover_image(media)
 
         return {
+            # Read by `product_service.work_cover_image_url`; absent when
+            # AniList supplied no artwork. Same field and same shape as the
+            # anime adapter, because it is the same source.
+            **({"cover_image_url": cover_url} if cover_url else {}),
             "provenance": {
                 "adapter": ADAPTER_NAME,
                 "adapter_version": ADAPTER_VERSION,
@@ -180,8 +195,10 @@ class AniListMangaAdapter:
                 "ingested_at": datetime.now(timezone.utc).isoformat(),
                 "license_note": (
                     "Metadata from AniList (CC BY-SA per AniList terms). "
-                    "No chapter text, scans, or artwork are retrieved."
+                    "No chapter text or scans are retrieved. Cover artwork "
+                    "is referenced by URL only, never copied."
                 ),
+                **({"cover_image": cover_provenance} if cover_provenance else {}),
             },
             "structure": {
                 "containers": len(self._build_volumes()),

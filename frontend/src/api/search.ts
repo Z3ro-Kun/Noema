@@ -1,7 +1,18 @@
-import { API_BASE_URL } from '../lib/config'
-import { ApiError } from './client'
+import { apiPost } from './client'
 import type { SemanticSearchResponse } from '../types/api'
 
+/**
+ * Meaning-oriented retrieval over the embedded corpus.
+ *
+ * Public: the endpoint takes no account and this sends no token.
+ *
+ * It used to call `fetch` directly, which meant it was the one path in the
+ * app that did not get the shared error handling -- a 503 surfaced to the
+ * reader as "semantic search failed with 503" and a dropped connection as
+ * "Failed to fetch". Going through `apiPost` gives it the same normalized,
+ * reader-facing messages as everything else. The request and response
+ * contract is unchanged.
+ */
 export interface SemanticSearchParams {
   query: string
   top_k?: number
@@ -10,23 +21,14 @@ export interface SemanticSearchParams {
   representation?: string
 }
 
-export async function semanticSearch(
+export function semanticSearch(
   params: SemanticSearchParams,
 ): Promise<SemanticSearchResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/search/semantic`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: params.query,
-      top_k: params.top_k ?? 10,
-      domain: params.domain ?? null,
-      text_tier: params.text_tier ?? null,
-      representation: params.representation ?? 'content_unit',
-    }),
+  return apiPost<SemanticSearchResponse>('/api/v1/search/semantic', {
+    query: params.query,
+    top_k: params.top_k ?? 10,
+    domain: params.domain ?? null,
+    text_tier: params.text_tier ?? null,
+    representation: params.representation ?? 'content_unit',
   })
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `semantic search failed with ${response.status}`)
-  }
-  return response.json() as Promise<SemanticSearchResponse>
 }

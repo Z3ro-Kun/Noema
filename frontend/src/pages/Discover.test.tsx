@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Discover from './Discover'
-import { setSessionToken } from '../api/library'
+import { setSessionToken } from '../api/client'
+import { resetSessionForTests } from '../auth/session'
 import {
   ANIME,
   FACETS,
@@ -37,6 +38,10 @@ interface Options {
   semantic?: unknown
   listFails?: boolean
   hangList?: boolean
+  /** Semantic search answers with a server error. */
+  semanticFails?: boolean
+  /** Semantic search never reaches the server at all. */
+  semanticUnreachable?: boolean
 }
 
 let requests: string[] = []
@@ -50,7 +55,20 @@ function mockApi(options: Options = {}) {
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
 
     if (url.includes('/works/facets')) return json(options.facets ?? FACETS)
-    if (url.includes('/search/semantic')) return json(options.semantic ?? SEARCH_RESPONSE)
+    if (url.includes('/search/semantic')) {
+      if (options.semanticUnreachable) {
+        // What a dropped connection looks like to `fetch`.
+        return Promise.reject(new TypeError('Failed to fetch'))
+      }
+      if (options.semanticFails) {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          json: () => Promise.resolve({}),
+        } as Response)
+      }
+      return json(options.semantic ?? SEARCH_RESPONSE)
+    }
     if (url.includes('/api/v1/works')) {
       if (options.hangList) return new Promise<Response>(() => {})
       if (options.listFails) {
@@ -73,7 +91,6 @@ function renderPage(options: Options = {}, props: Record<string, unknown> = {}) 
       onNavigate={() => {}}
       onOpenWork={() => {}}
       onOpenRetrievalDetail={() => {}}
-      account={null}
       {...props}
     />,
   )
@@ -86,6 +103,7 @@ function lastListRequest(): string {
 
 describe('Discover', () => {
   beforeEach(() => {
+    resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
@@ -110,7 +128,7 @@ describe('Discover', () => {
     renderPage({ listFails: true })
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('the catalogue is unavailable')
+    expect(alert).toHaveTextContent('The catalogue is unavailable.')
     expect(screen.queryByText('Cowboy Bebop')).not.toBeInTheDocument()
   })
 
@@ -121,22 +139,36 @@ describe('Discover', () => {
     expect(screen.getByRole('button', { name: 'Show everything' })).toBeInTheDocument()
   })
 
-  it('renders a work card from the public contract alone', async () => {
+  it('renders a grid entry from the public contract alone', async () => {
     renderPage({ page: listPage([presentation(ANIME, userState({ rating: 8 }))]) })
 
     expect(await screen.findByText('Cowboy Bebop')).toBeInTheDocument()
-    expect(screen.getByText('カウボーイビバップ')).toBeInTheDocument()
-    expect(screen.getByText(/Anime · TV · 1998/)).toBeInTheDocument()
-    expect(screen.getByText('Action')).toBeInTheDocument()
-    expect(screen.getByText('Bounty hunters in space.')).toBeInTheDocument()
+    // The plate carries the medium and the year; the caption carries the
+    // credit, and neither is invented.
+    expect(screen.getByText(/Anime · 1998/)).toBeInTheDocument()
     // The reader's own state is marked, and marked as theirs.
-    expect(screen.getByText(/In your library · Planned · rated 8\/10/)).toBeInTheDocument()
+    expect(screen.getByText(/Planned to start, rated 8\/10/)).toBeInTheDocument()
   })
 
-  it('states an absent synopsis rather than hiding it', async () => {
-    renderPage({ page: listPage([presentation(WORK)]) })
+  it('shows nothing of the reader to an anonymous visitor', async () => {
+    // The canonical half is identical either way; `user_state` is null.
+    renderPage({ page: listPage([presentation(ANIME, null)]) })
 
-    expect(await screen.findByText('No synopsis available')).toBeInTheDocument()
+    expect(await screen.findByText('Cowboy Bebop')).toBeInTheDocument()
+    expect(screen.queryByText(/In your library/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/rated/)).not.toBeInTheDocument()
+  })
+
+  it('leaves synopsis and label chips to the work page', async () => {
+    // A deliberate reduction, not an omission: the browse grid is for
+    // looking, and a column of clamped descriptions under rows of chips is
+    // what made this page read as a query interface. Both still appear in
+    // full on WorkPage, which has its own tests for them.
+    renderPage({ page: listPage([presentation(ANIME, userState({ rating: 8 }))]) })
+
+    await screen.findByText('Cowboy Bebop')
+    expect(screen.queryByText('Bounty hunters in space.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Action')).not.toBeInTheDocument()
   })
 
   it('never renders corpus internals', async () => {
@@ -144,9 +176,18 @@ describe('Discover', () => {
 
     await screen.findByText('Cowboy Bebop')
     const rendered = container.textContent ?? ''
-    for (const forbidden of ['content_unit', 'embedding', 'adapter', 'extra_metadata']) {
+    for (const forbidden of ['content_unit', 'adapter', 'extra_metadata']) {
       expect(rendered).not.toContain(forbidden)
     }
+
+    // "embeddings" is a special case. It is not a leak here -- the meaning
+    // mode names the mechanism it uses, on purpose, and both modes now
+    // describe themselves at once so a reader can choose between them. So
+    // the assertion is that this is the *only* place the word appears: no
+    // work, no result and no filter may carry it.
+    const modes = screen.getByRole('group', { name: 'Search mode' })
+    expect(modes.textContent).toContain('embeddings')
+    expect(rendered.replace(modes.textContent ?? '', '')).not.toContain('embedding')
   })
 
   it('opens a work when its card is clicked', async () => {
@@ -221,7 +262,6 @@ describe('Discover', () => {
         onNavigate={() => {}}
         onOpenWork={() => {}}
         onOpenRetrievalDetail={() => {}}
-        account={null}
       />,
     )
 
@@ -361,6 +401,97 @@ describe('Discover', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Inspect retrieval details' }))
     expect(inspect).toHaveBeenCalled()
+  })
+
+  it('reports a failed meaning search in the product’s words, not the server’s', async () => {
+    const user = userEvent.setup()
+    const { container } = renderPage({ semanticFails: true })
+
+    await screen.findByText('Cowboy Bebop')
+    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Something went wrong. Please try again.')
+    // No status code, and no "semantic search failed with 503".
+    expect(container.textContent ?? '').not.toContain('503')
+  })
+
+  it('reports an unreachable meaning search as a connection problem', async () => {
+    const user = userEvent.setup()
+    const { container } = renderPage({ semanticUnreachable: true })
+
+    await screen.findByText('Cowboy Bebop')
+    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Could not reach Noema')
+    // The raw exception never reaches a reader.
+    expect(container.textContent ?? '').not.toContain('TypeError')
+    expect(container.textContent ?? '').not.toContain('Failed to fetch')
+  })
+
+  it('hands its whole state to the retrieval surface', async () => {
+    // Opening retrieval detail used to lose the search: the reader came back
+    // to an empty catalogue. The state travels with them instead.
+    const user = userEvent.setup()
+    const inspect = vi.fn()
+    renderPage({}, { onOpenRetrievalDetail: inspect })
+
+    await screen.findByText('Cowboy Bebop')
+    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
+    await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Inspect retrieval details' }))
+
+    expect(inspect).toHaveBeenCalledWith({
+      mode: 'meaning',
+      query: 'isolation',
+      domain: 'anime',
+      concept: '',
+      genre: '',
+      page: 1,
+    })
+  })
+
+  it('resumes a saved state rather than starting over', async () => {
+    renderPage(
+      {},
+      {
+        initialState: {
+          mode: 'titles',
+          query: 'alice',
+          domain: 'literature',
+          concept: 'tragedy',
+          genre: 'Drama',
+          page: 1,
+        },
+      },
+    )
+
+    // The filters, the mode and the query are all back -- and the search box
+    // shows what the results below it are answering.
+    await waitFor(() => expect(lastListRequest()).toContain('q=alice'))
+    expect(lastListRequest()).toContain('domain=literature')
+    expect(lastListRequest()).toContain('concept=tragedy')
+    expect(lastListRequest()).toContain('genre=Drama')
+    expect((screen.getByLabelText('Search titles') as HTMLInputElement).value).toBe('alice')
+    expect(await screen.findByRole('heading', { name: /matching “alice”/ })).toBeInTheDocument()
+  })
+
+  it('starts clean when no state is handed back', async () => {
+    // Direct navigation is unaffected: no resume, no leftover query.
+    renderPage()
+
+    await screen.findByText('Cowboy Bebop')
+    expect((screen.getByLabelText('Search titles') as HTMLInputElement).value).toBe('')
+    expect(lastListRequest()).not.toContain('q=')
+    expect(await screen.findByRole('heading', { name: '2 works' })).toBeInTheDocument()
   })
 
   // --- discovery is not personalised ---------------------------------------

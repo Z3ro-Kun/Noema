@@ -17,8 +17,14 @@ import type { HistoryEntry, HistoryKind, LibraryHistory } from '../types/api'
  * `status_changed`, no before/after pairs, and no raw timestamps.
  *
  * Reconsumption shows up here on its own, without the word: a second
- * "Started again" and a completion count are what a reader needs, and
- * neither requires them to know the model underneath.
+ * "Started again" followed by a second "Completed" is what a reader needs,
+ * and neither requires them to know the model underneath.
+ *
+ * Phase 1AA removed the summary count that used to sit at the top of this
+ * list. The status panel now states it outright -- "Read 2 times", beside
+ * the control that changes it -- and the same number in two places is one
+ * place too many: a reader should not have to work out whether they are
+ * being told one thing or two.
  */
 
 const KIND_LABELS: Record<HistoryKind, string> = {
@@ -57,33 +63,28 @@ export default function WorkHistory({ history }: { history: LibraryHistory }) {
   if (history.entries.length === 0) return null
 
   return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-slate-400 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300">
+    <div>
+      <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
         Your history with this
-      </summary>
+      </p>
 
-      <div className="mt-2 space-y-2 border-l border-slate-800 pl-3">
-        {history.times_completed > 1 && (
-          // The one summary figure worth stating outright: a reader who
-          // finished something three times has said something about it that
-          // a list of dates makes them count for themselves.
-          <p className="text-xs text-slate-300">
-            Completed {history.times_completed} times
-          </p>
-        )}
-
-        <ol className="space-y-1">
+      <div className="mt-5">
+        <ol className="divide-y divide-paper/10 border-t border-paper/10">
           {history.entries.map((entry, index) => (
             <li
               key={`${entry.kind}-${entry.occurred_at}-${index}`}
-              className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs"
+              className="flex flex-wrap items-baseline justify-between gap-x-6 py-3"
             >
-              <span className="text-slate-300">{label(entry)}</span>
-              <span className="text-slate-500">{formatDate(entry.occurred_at)}</span>
+              <span className="font-display text-[1.05rem] font-light text-paper">
+                {label(entry)}
+              </span>
+              <span className="text-[0.62rem] uppercase tracking-label text-paper-faint">
+                {formatDate(entry.occurred_at)}
+              </span>
             </li>
           ))}
         </ol>
       </div>
-    </details>
+    </div>
   )
 }

@@ -205,7 +205,8 @@ async def test_provenance_survives_persistence(db_session: AsyncSession) -> None
     provenance = work.extra_metadata["provenance"]
     assert provenance["adapter"] == "manga.anilist"
     assert provenance["source_name"] == "anilist"
-    assert "No chapter text, scans, or artwork" in provenance["license_note"]
+    assert "No chapter text or scans are retrieved" in provenance["license_note"]
+    assert "referenced by URL only, never copied" in provenance["license_note"]
     assert work.extra_metadata["anilist"]["genres"]
 
 

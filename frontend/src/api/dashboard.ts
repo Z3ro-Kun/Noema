@@ -1,5 +1,5 @@
+import { authenticatedRequest } from './client'
 import type { TasteDashboard } from '../types/api'
-import { authenticatedRequest } from './library'
 
 /**
  * The taste profile.

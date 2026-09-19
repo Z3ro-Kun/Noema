@@ -257,6 +257,74 @@ async def remove_library_entry(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{work_id}/completions", response_model=WorkPresentation)
+async def record_library_entry_completion(
+    work_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> WorkPresentation:
+    """Record one more deliberate completed cycle: a re-read or a re-watch.
+
+    A POST, and only ever reached by a reader pressing the control. Reading
+    the work, refreshing the page and changing status all leave the count
+    alone -- which is the point: `times_completed` is meant to say how many
+    times someone *chose* to record finishing this, and a number that drifts
+    upward on navigation says nothing.
+
+    Returns the same `WorkPresentation` every other library route returns,
+    so the caller re-renders from the server's count rather than incrementing
+    its own copy.
+
+    409 if the work is not currently completed: there is no such thing as
+    reading something again before reading it once.
+    """
+    try:
+        await library_service.record_reconsumption(db, user_id=user.id, work_id=work_id)
+    except library_service.InteractionNotFoundError:
+        raise _NOT_IN_LIBRARY from None
+    except library_service.ReconsumptionNotAvailableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+
+    await db.commit()
+    interaction = await library_service.get_interaction(db, user_id=user.id, work_id=work_id)
+    return await _present(db, interaction)
+
+
+@router.delete("/{work_id}/completions", response_model=WorkPresentation)
+async def undo_library_entry_completion(
+    work_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> WorkPresentation:
+    """Take back one recorded completion.
+
+    The inverse of the POST above, and the reason it exists: counting up was
+    one-way, so a reader who recorded a re-read they had not actually had was
+    stuck with it. `times_completed` is meant to say how many times someone
+    *chose* to record finishing this, which means they have to be able to
+    unchoose.
+
+    Never removes the work and never touches the rating.
+
+    409 when there is nothing to take back -- a work completed once, or one
+    whose stored history does not end in a cycle this can lift off cleanly.
+    A first completion is a reading, not a mistake, so the count stops at one.
+    """
+    try:
+        await library_service.undo_reconsumption(db, user_id=user.id, work_id=work_id)
+    except library_service.InteractionNotFoundError:
+        raise _NOT_IN_LIBRARY from None
+    except (
+        library_service.ReconsumptionNotAvailableError,
+        library_service.NoReconsumptionToUndoError,
+    ) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+
+    await db.commit()
+    interaction = await library_service.get_interaction(db, user_id=user.id, work_id=work_id)
+    return await _present(db, interaction)
+
+
 @router.get("/{work_id}/history", response_model=LibraryHistory)
 async def read_library_entry_history(
     work_id: uuid.UUID,

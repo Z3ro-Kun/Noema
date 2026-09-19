@@ -29,6 +29,39 @@ def sparse():
     return AniListAnimeAdapter(media=load_media("anilist_sparse.json")).load()
 
 
+# --- how a title is chosen ------------------------------------------------
+
+
+def test_the_english_title_is_the_one_shown(bebop) -> None:
+    """Phase 1AB: english -> romaji -> native, not romaji first."""
+    titles = bebop.extra_metadata["anilist"]["titles"]
+
+    assert titles["english"] == "Cowboy Bebop"
+    assert bebop.title == titles["english"]
+
+
+def test_the_title_falls_back_through_the_variants() -> None:
+    media = load_media("anilist_cowboy_bebop.json")
+
+    media["title"]["english"] = None
+    assert AniListAnimeAdapter(media=media).load().title == "Cowboy Bebop"
+
+    media["title"]["romaji"] = None
+    assert AniListAnimeAdapter(media=media).load().title == "カウボーイビバップ"
+
+
+def test_a_payload_with_no_title_at_all_is_refused() -> None:
+    media = load_media("anilist_cowboy_bebop.json")
+    media["title"] = {"english": None, "romaji": None, "native": None}
+
+    with pytest.raises(ValueError):
+        AniListAnimeAdapter(media=media).load()
+
+
+def test_the_native_title_survives_the_choice(bebop) -> None:
+    assert bebop.original_title == "カウボーイビバップ"
+
+
 # --- work normalization -------------------------------------------------
 
 

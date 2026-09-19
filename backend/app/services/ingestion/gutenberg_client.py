@@ -32,6 +32,19 @@ _SUBJECT_RE = re.compile(
     r"<dcterms:subject>.*?<rdf:value>(.*?)</rdf:value>", re.DOTALL | re.IGNORECASE
 )
 _LCC_RE = re.compile(r"^[A-Z]{1,3}$")
+
+# Cover art is a <pgterms:file> whose dcterms:format value is an image type.
+# Gutenberg publishes the same cover at two sizes and states both; we read
+# the element rather than assembling a URL from the ebook id, so a book with
+# no cover on record simply has none.
+_COVER_FILE_RE = re.compile(
+    r"<pgterms:file[^>]*rdf:about=\"([^\"]*)\".*?</pgterms:file>",
+    re.DOTALL | re.IGNORECASE,
+)
+_IMAGE_FORMAT_RE = re.compile(r"<rdf:value[^>]*>\s*image/(\w+)\s*</rdf:value>", re.IGNORECASE)
+# Gutenberg's own naming. `medium` is ~400px wide and is what the product
+# renders; `small` is a thumbnail and is kept only as a fallback.
+_COVER_PREFERENCE = (".cover.medium.", ".cover.small.")
 _ENTITIES = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'"}
 
 
@@ -55,6 +68,11 @@ class GutenbergMetadata:
     # Library of Congress Classification letters, e.g. "PR". Kept separate:
     # a shelving class is not a subject heading and must not be mapped as one.
     lcc_classes: list[str] = field(default_factory=list)
+    # Cover art URL as the catalogue record states it, or None when the
+    # record lists no cover image. Phase 1AA.
+    cover_image_url: str | None = None
+    # Which `pgterms:file` entry the URL came from, for provenance.
+    cover_image_source_field: str | None = None
 
 
 def _unescape(text: str) -> str:
@@ -63,13 +81,43 @@ def _unescape(text: str) -> str:
     return text
 
 
+def parse_cover_image(rdf_text: str) -> tuple[str | None, str | None]:
+    """The cover art URL a catalogue record states, and which entry it came from.
+
+    Phase 1AA. Gutenberg lists every downloadable file for a book as a
+    `pgterms:file`, each with its media type; the cover is the one whose
+    type is an image. Returns `(url, source_field)`, both `None` when the
+    record lists no cover -- which is a real answer for plenty of older
+    texts, and is left as "no cover" rather than patched over.
+
+    The URL is read out of the record. It is never assembled from the ebook
+    id, so this cannot invent a cover for a book that has none.
+    """
+    candidates: dict[str, str] = {}
+    for match in _COVER_FILE_RE.finditer(rdf_text):
+        url = _unescape(match.group(1)).strip()
+        if not url or not _IMAGE_FORMAT_RE.search(match.group(0)):
+            continue
+        for marker in _COVER_PREFERENCE:
+            if marker in url:
+                candidates.setdefault(marker, url)
+
+    for marker in _COVER_PREFERENCE:
+        if marker in candidates:
+            return candidates[marker], f"pgterms:file{marker}"
+    return None, None
+
+
 def parse_subjects(rdf_text: str, ebook_id: str, source_url: str) -> GutenbergMetadata:
-    """Read subject headings out of a Gutenberg RDF record.
+    """Read subject headings and cover art out of a Gutenberg RDF record.
 
     Order is preserved and duplicates are dropped, so a re-fetch of an
     unchanged record produces an identical result.
     """
     metadata = GutenbergMetadata(ebook_id=str(ebook_id), source_url=source_url)
+    metadata.cover_image_url, metadata.cover_image_source_field = parse_cover_image(
+        rdf_text
+    )
     seen: set[str] = set()
 
     for raw in _SUBJECT_RE.findall(rdf_text):

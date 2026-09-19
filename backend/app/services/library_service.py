@@ -12,7 +12,7 @@ adds to the history instead of overwriting it.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,6 +63,23 @@ class InvalidStatusError(LibraryError):
 
 class InvalidRatingError(LibraryError):
     """A rating outside the offered scale."""
+
+
+class ReconsumptionNotAvailableError(LibraryError):
+    """Asked to record another completion of something not yet completed.
+
+    Recording a re-read is only meaningful once there has been a read. The
+    first completion is an ordinary status change; see `record_reconsumption`.
+    """
+
+
+class NoReconsumptionToUndoError(LibraryError):
+    """Asked to take back a completion that is not there to take back.
+
+    Raised at the floor -- a work completed once has nothing above the first
+    reading to remove -- and when the stored trail does not end in a cycle
+    this call would be able to undo cleanly.
+    """
 
 
 def _now() -> datetime:
@@ -284,7 +301,7 @@ async def remove_from_library(
 
 def _apply_status(
     interaction: UserContentInteraction, session: AsyncSession, status: str
-) -> None:
+) -> UserContentEvent:
     """Move to a status and stamp the dates that transition implies.
 
     Only dates. Nothing here touches `rating`: a completion is not a
@@ -313,7 +330,7 @@ def _apply_status(
         interaction.abandoned_at = now
 
     interaction.status = status
-    _record(
+    return _record(
         interaction,
         session,
         event_type=EVENT_STATUS_CHANGED,
@@ -333,6 +350,162 @@ async def set_status(
         raise InteractionNotFoundError("no library entry for that work")
 
     _apply_status(interaction, session, status)
+    await session.flush()
+    return interaction
+
+
+async def record_reconsumption(
+    session: AsyncSession, *, user_id: uuid.UUID, work_id: uuid.UUID
+) -> UserContentInteraction:
+    """Record one more deliberate completed cycle of a finished work.
+
+    Phase 1AA. A re-read was previously something a reader had to *perform*:
+    move back to `in_progress`, then mark completed again. That worked, and
+    it is still exactly what this does -- but it made the count a side
+    effect of navigating the status control, which is how a work ends up
+    claiming two reads after one.
+
+    So the cycle becomes a single deliberate act. This applies the same two
+    transitions the manual route always did, through `_apply_status`, so:
+
+        times_started    += 1     a re-read is a start
+        times_completed  += 1     and a finish
+        completed_at      = now
+        status            = completed    where it began
+
+    and the event log gets the same genuine pair it would have got by hand
+    -- `completed -> in_progress` then `in_progress -> completed` -- which
+    `library_product.build_history` already folds into "Started again" and
+    "Completed". No new event type, no second counter, and no parallel
+    mechanism: the stored history of a reader who used the old route and one
+    who presses the new control is identical.
+
+    The rating is not touched, read, or asked for. Finishing something a
+    third time is not a score, and `_apply_status` has never derived one.
+
+    Only a completed work can be reconsumed. That is the whole guard against
+    an accidental increment: there is no render, no GET and no status change
+    that reaches this function, and the one control that does is a POST a
+    reader has to press.
+    """
+    interaction = await get_interaction(session, user_id=user_id, work_id=work_id)
+    if interaction is None or interaction.removed_at is not None:
+        raise InteractionNotFoundError("no library entry for that work")
+
+    if interaction.status != STATUS_COMPLETED:
+        raise ReconsumptionNotAvailableError(
+            "only a completed work can record another completion"
+        )
+
+    restarted = _apply_status(interaction, session, STATUS_IN_PROGRESS)
+    finished = _apply_status(interaction, session, STATUS_COMPLETED)
+
+    # The event log is ordered by `occurred_at`, and these two are written
+    # inside one request: on a platform whose clock ticks in milliseconds
+    # they can carry the same timestamp, and the tie would then be broken by
+    # a random uuid -- which reads as "completed, then started again".
+    # Separating them is what keeps the history a sequence.
+    if finished.occurred_at <= restarted.occurred_at:
+        finished.occurred_at = restarted.occurred_at + timedelta(microseconds=1)
+
+    await session.flush()
+    return interaction
+
+
+async def undo_reconsumption(
+    session: AsyncSession, *, user_id: uuid.UUID, work_id: uuid.UUID
+) -> UserContentInteraction:
+    """Take back one recorded completion, exactly as it was recorded.
+
+    Phase 1AB. Counting up was deliberate but one-way: a reader who pressed
+    "Watch again" once too often had no way to say so, and the count is
+    supposed to be what they *chose* to record.
+
+    This is the inverse of `record_reconsumption` and nothing more. It
+    removes the trailing `completed -> in_progress -> completed` pair that
+    the increment wrote, decrements both counters by one, and rolls
+    `completed_at` back to the completion that now ends the trail:
+
+        times_started    -= 1
+        times_completed  -= 1
+        completed_at      = the previous completion
+        status            = completed, where it began
+
+    **The floor is one.** A work that has been completed once has one reading
+    to its name, and the correction being offered is "that extra cycle did
+    not happen" -- never "I never read this". Zero and negative counts are
+    refused, and this call never removes the work, never touches the rating
+    or `rated_at`, and never writes a rating event.
+
+    The events are deleted rather than annotated. An undo is the reader
+    saying a cycle was never real, so the honest record is one that does not
+    claim it happened -- and a `completion_undone` event type would mean the
+    history fold, the preference layer and every later reader of the log had
+    to learn a fourth verb to describe something that is simply absent. The
+    log stays append-only for everything that *did* occur.
+
+    If the trail does not end in a pair this can lift off cleanly, nothing is
+    changed and `NoReconsumptionToUndoError` is raised. Guessing at which
+    events to remove would be worse than refusing.
+    """
+    interaction = await get_interaction(session, user_id=user_id, work_id=work_id)
+    if interaction is None or interaction.removed_at is not None:
+        raise InteractionNotFoundError("no library entry for that work")
+
+    if interaction.status != STATUS_COMPLETED:
+        raise ReconsumptionNotAvailableError(
+            "only a completed work can have a completion taken back"
+        )
+
+    # The floor. One completion is a reading, not a mistake.
+    if interaction.times_completed <= 1:
+        raise NoReconsumptionToUndoError(
+            "this work has only one recorded completion"
+        )
+
+    status_events = list(
+        (
+            await session.execute(
+                select(UserContentEvent)
+                .where(
+                    UserContentEvent.interaction_id == interaction.id,
+                    UserContentEvent.event_type == EVENT_STATUS_CHANGED,
+                )
+                .order_by(UserContentEvent.occurred_at, UserContentEvent.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # The last two status transitions must be the cycle being undone.
+    if len(status_events) < 2:
+        raise NoReconsumptionToUndoError("no completed cycle to take back")
+    finished, restarted = status_events[-1], status_events[-2]
+    if (
+        finished.status_after != STATUS_COMPLETED
+        or restarted.status_after != STATUS_IN_PROGRESS
+    ):
+        raise NoReconsumptionToUndoError("the recorded history does not end in a cycle")
+
+    earlier_completions = [
+        event
+        for event in status_events[:-1]
+        if event.status_after == STATUS_COMPLETED
+    ]
+    if not earlier_completions:
+        raise NoReconsumptionToUndoError("no earlier completion to fall back to")
+
+    await session.delete(finished)
+    await session.delete(restarted)
+
+    interaction.times_completed -= 1
+    interaction.times_started -= 1
+    # The work is still completed; it was completed earlier than the row
+    # currently claims.
+    interaction.completed_at = earlier_completions[-1].occurred_at
+    interaction.status = STATUS_COMPLETED
+
     await session.flush()
     return interaction
 

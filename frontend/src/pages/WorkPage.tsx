@@ -2,48 +2,66 @@ import { useCallback, useEffect, useState } from 'react'
 import AppShell from '../components/AppShell'
 import type { ProductView } from '../components/AppShell'
 import RatingControl from '../components/RatingControl'
+import LabelList from '../components/LabelList'
+import SignInPrompt from '../components/SignInPrompt'
 import StateMessage from '../components/StateMessage'
 import StatusControl from '../components/StatusControl'
-import { WorkCover } from '../components/WorkCard'
 import WorkHistory from '../components/WorkHistory'
+import WorkPlate from '../components/WorkPlate'
 import { fetchWork } from '../api/catalog'
 import {
   addToLibrary,
   fetchWorkHistory,
+  recordReconsumption,
   removeFromLibrary,
+  undoReconsumption,
   updateLibraryEntry,
 } from '../api/library'
+import { relationshipDates } from '../lib/dates'
 import { statusLabel } from '../lib/labels'
 import type { LibraryHistory, LibraryStatus, WorkPresentation } from '../types/api'
 
 /**
  * One work, and the reader's own relationship with it.
  *
- * Phase 1Y. The product's work page, built on `WorkPresentation` -- canonical
- * `work` plus this caller's `user_state`, two objects rather than one
- * flattened shape. That split is drawn again in the layout: the work's own
- * facts sit in the page body, and anything belonging to the reader sits in a
- * fenced panel beside them. A reader should never have to guess which of the
- * two they are looking at.
+ * Home is an entry, Discover is the corpus, Library is a record. This is the
+ * one page about a single work, so it is laid out as an editorial spread
+ * rather than as a grid cell or a row: artwork at a size worth looking at,
+ * the title as the page's own heading, and the synopsis as the largest body
+ * text in the product. The synopsis was taken out of Discover and Library
+ * deliberately; this is where it was taken to.
  *
- * This is where the product loop closes. Discover finds a work, this page
- * records what the reader did with it, and the preference engine reads that
- * history -- so the controls here are the only place in the product that
- * *writes* the evidence the taste profile is built from.
+ * ---
  *
- * Status and rating stay separate on the way out, as they are in storage:
- * finishing something is not liking it, and a work can be completed and
- * unrated forever. They are two controls, described in their own words, and
- * neither writes the other -- see `StatusControl` and `RatingControl`.
+ * Canonical and personal stay apart
  *
- * Reconsumption needs no concept of its own here. A completed work offers
- * "Read it again", which moves it back to in progress; the backend counts the
- * restart, keeps every earlier completion and leaves the rating alone. The
- * reader never meets the word, and nothing is duplicated.
+ * The work's own facts occupy the hero and the metadata band beneath it, and
+ * everything belonging to the reader lives in a separate full-width band that
+ * says whose it is. That is the split `WorkPresentation` draws in the API --
+ * `work` is shared and identical for every viewer, `user_state` belongs to
+ * one person -- and a reader should never have to work out which half of a
+ * page is which.
  *
- * Nothing on this page comes from the internal catalogue record. Adapter
- * names, ingestion provenance, containers, content units and embeddings are
- * the corpus viewer's business, and it is linked as exactly that.
+ * The rating says "Your rating" in as many words. Noema has no global score,
+ * no average, no popularity and no review count, and a bare number beside a
+ * work is exactly how a reader would assume otherwise.
+ *
+ * ---
+ *
+ * Two kinds of failure, told apart
+ *
+ * A write and the re-read that follows it used to share one `try`, so a
+ * status change that *succeeded* and was then followed by a failed refresh
+ * reported itself as a failed status change, over stale values. They are now
+ * two phases with two messages: the action failed, or the action worked and
+ * the page could not refresh itself. The second is not a reason to tell
+ * someone their change was lost.
+ *
+ * ---
+ *
+ * Nothing here comes from the internal catalogue record. Adapter names,
+ * ingestion provenance, containers, content units and embeddings are the
+ * corpus viewer's business, and it is linked as exactly that.
  */
 
 interface WorkPageProps {
@@ -53,6 +71,11 @@ interface WorkPageProps {
   /** The development corpus viewer for this work. */
   onOpenCorpusViewer: (workId: string) => void
   account: string | null
+}
+
+/** Credits as one editorial line: "Mary Shelley, author · Gutenberg, source". */
+function creditLine(creators: { name: string; role: string }[]): string {
+  return creators.map((creator) => `${creator.name} (${creator.role})`).join(' · ')
 }
 
 export default function WorkPage({
@@ -68,18 +91,39 @@ export default function WorkPage({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  /** A write that landed, followed by a refresh that did not. */
+  const [staleError, setStaleError] = useState<string | null>(null)
+
+  /**
+   * Read the work, and its history when there is one to read.
+   *
+   * Three conditions, and each rules out a request that would be made for
+   * nobody. There must be a reader -- an anonymous visitor has no history
+   * and must send nothing to a library endpoint, whatever the work response
+   * happens to contain. There must be an entry. And it must still be held: a
+   * soft-removed row does have a history, but nothing on this page renders
+   * it.
+   *
+   * A 404 is the ordinary answer for a work that was never added, so it
+   * never reaches `error`.
+   */
+  const read = useCallback(async (): Promise<WorkPresentation> => {
+    const work = await fetchWork(workId)
+    setPresentation(work)
+    setHistory(
+      account && work.user_state && work.user_state.in_library
+        ? await fetchWorkHistory(workId).catch(() => null)
+        : null,
+    )
+    return work
+  }, [workId, account])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const work = await fetchWork(workId)
-      setPresentation(work)
-      // History exists only for a work this reader holds, and a 404 there is
-      // the normal case rather than a failure, so it never reaches `error`.
-      setHistory(
-        work.user_state ? await fetchWorkHistory(workId).catch(() => null) : null,
-      )
+      await read()
       setError(null)
+      setStaleError(null)
     } catch (caught) {
       setPresentation(null)
       setHistory(null)
@@ -87,287 +131,395 @@ export default function WorkPage({
     } finally {
       setLoading(false)
     }
-  }, [workId])
+  }, [read])
 
   useEffect(() => {
     void load()
   }, [load])
 
   /**
-   * Run one library write and re-read the work.
+   * Run one library write, then re-read the work.
    *
    * Re-reading rather than patching state locally: the server owns what a
    * status change does to `started_at`, `times_completed` and the rest, and
    * guessing at it here would put two versions of the truth on screen.
+   *
+   * The two phases are caught separately. Whether the write landed is the
+   * only thing the first `catch` can report, and a refresh that fails
+   * afterwards says so in its own words rather than retracting the write.
    */
   const act = useCallback(
     async (action: () => Promise<unknown>) => {
       setBusy(true)
+      setActionError(null)
+      setStaleError(null)
+
       try {
         await action()
-        const work = await fetchWork(workId)
-        setPresentation(work)
-        setHistory(
-          work.user_state ? await fetchWorkHistory(workId).catch(() => null) : null,
-        )
-        setActionError(null)
       } catch (caught) {
         setActionError(caught instanceof Error ? caught.message : String(caught))
+        setBusy(false)
+        return
+      }
+
+      try {
+        await read()
+      } catch {
+        // The change is saved. What is on screen is merely old, and saying
+        // "that did not work" here would be false.
+        setStaleError(
+          'Your change was saved, but Noema could not refresh this page. What you see below may be out of date.',
+        )
       } finally {
         setBusy(false)
       }
     },
-    [workId],
+    [read],
   )
 
   const work = presentation?.work ?? null
   const state = presentation?.user_state ?? null
+  const held = Boolean(state && state.in_library)
 
   return (
     <AppShell
       title={work ? work.title : 'Work'}
-      subtitle={
-        work
-          ? [work.domain.name, work.media_format, work.year].filter(Boolean).join(' · ')
-          : undefined
-      }
       current={null}
       onNavigate={onNavigate}
+      bleed
       actions={
         <button
           type="button"
           onClick={onBack}
-          className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+          className="border-b border-paper/20 pb-0.5 text-[0.78rem] text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           Back
         </button>
       }
-    >
-      {loading && <StateMessage kind="loading" title="Loading this work…" />}
+      masthead={
+        work ? (
+          /* --- the work ------------------------------------------------ */
+          <header className="border-b border-paper/10">
+            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
+              <div className="grid gap-10 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-16">
+                <div className="w-44 sm:w-56 lg:w-full">
+                  <WorkPlate work={work} priority />
+                </div>
 
-      {error && !loading && (
-        <StateMessage
-          kind="error"
-          title="Noema could not load this work."
-          detail={error}
-          action={
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
-            >
-              Try again
-            </button>
-          }
-        />
+                <div className="min-w-0">
+                  <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+                    {[work.domain.name, work.media_format, work.year]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+
+                  <h1 className="mt-5 font-display text-[2.4rem] font-light leading-[1.05] tracking-tight text-paper sm:text-5xl lg:text-[3.4rem]">
+                    {work.title}
+                  </h1>
+
+                  {work.original_title && work.original_title !== work.title && (
+                    <p className="mt-3 font-display text-xl font-light italic text-paper-dim">
+                      {work.original_title}
+                    </p>
+                  )}
+
+                  <p className="mt-6 text-[0.66rem] uppercase tracking-label text-paper-faint">
+                    {work.creators.length > 0
+                      ? creditLine(work.creators)
+                      : 'No credits recorded'}
+                  </p>
+
+                  {/*
+                    The largest body text in the product, and the reason the
+                    other two surfaces no longer carry a synopsis at all.
+                  */}
+                  <section
+                    aria-labelledby="synopsis-heading"
+                    className="mt-9 border-t border-paper/10 pt-9"
+                  >
+                    {/*
+                      No visible label: the synopsis is the subject of the
+                      page, and captioning it "Synopsis" would be chrome. The
+                      region is still named for assistive technology.
+                    */}
+                    <h2 id="synopsis-heading" className="sr-only">
+                      Synopsis
+                    </h2>
+                    {work.synopsis ? (
+                      <p className="max-w-2xl font-display text-lg font-light leading-relaxed text-paper/85 md:text-xl">
+                        {work.synopsis}
+                      </p>
+                    ) : (
+                      <p className="max-w-2xl font-display text-lg font-light italic leading-relaxed text-paper-faint">
+                        No synopsis available. The source that supplied this record
+                        did not include one.
+                      </p>
+                    )}
+                  </section>
+                </div>
+              </div>
+            </div>
+          </header>
+        ) : (
+          <div className="border-b border-paper/10">
+            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 lg:px-10">
+              <h1 className="font-display text-[2.4rem] font-light text-paper">Work</h1>
+            </div>
+          </div>
+        )
+      }
+    >
+      {(loading || error) && (
+        <div className="mx-auto max-w-page px-5 py-14 sm:px-6 lg:px-10">
+          {loading && <StateMessage kind="loading" title="Loading this work…" />}
+          {error && !loading && (
+            <StateMessage
+              kind="error"
+              title="Noema could not load this work."
+              detail={error}
+              action={
+                <button
+                  type="button"
+                  onClick={() => void load()}
+                  className="border-b border-accent pb-0.5 text-[0.85rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Try again
+                </button>
+              }
+            />
+          )}
+        </div>
       )}
 
       {work && !loading && (
-        <div className="flex flex-col gap-6 lg:flex-row">
-          {/* --- canonical: identical for every viewer -------------------- */}
-          <div className="min-w-0 flex-1 space-y-6">
-            <div className="flex gap-4">
-              <WorkCover work={work} />
-              <div className="min-w-0">
-                {work.original_title && work.original_title !== work.title && (
-                  <p className="text-sm text-slate-400">{work.original_title}</p>
-                )}
-                {work.creators.length > 0 ? (
-                  <p className="mt-1 text-sm text-slate-300">
-                    {work.creators
-                      .map((creator) => `${creator.name} (${creator.role})`)
-                      .join(' · ')}
+        <>
+          {/* --- what this work is said to be ------------------------- */}
+          <section
+            aria-labelledby="metadata-heading"
+            className="border-b border-paper/10 bg-surface"
+          >
+            <h2 id="metadata-heading" className="sr-only">
+              How this work is classified
+            </h2>
+            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-16 lg:px-10">
+              <div className="grid gap-12 md:grid-cols-2 md:gap-16 md:divide-x md:divide-paper/10">
+                <div className="md:pr-16">
+                  <h3 className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+                    Themes
+                  </h3>
+                  <p className="mt-4 max-w-md text-[0.85rem] leading-relaxed text-paper-dim">
+                    Noema&rsquo;s own vocabulary, shared across every medium. This is
+                    what your taste profile is built from.
                   </p>
-                ) : (
-                  <p className="mt-1 text-sm italic text-slate-600">
-                    No credits recorded
+                  {work.concepts.length > 0 ? (
+                    <LabelList
+                      items={work.concepts.map((concept) => concept.name)}
+                      noun="themes"
+                      limit={6}
+                      className="mt-6 font-display text-lg font-light leading-relaxed text-paper"
+                    />
+                  ) : (
+                    <p className="mt-6 font-display text-lg font-light italic text-paper-faint">
+                      No themes associated with this work yet. That is a gap in
+                      Noema&rsquo;s data, not a statement about the work.
+                    </p>
+                  )}
+                </div>
+
+                <div className="md:pl-16">
+                  <h3 className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+                    Genres
+                  </h3>
+                  <p className="mt-4 max-w-md text-[0.85rem] leading-relaxed text-paper-dim">
+                    As stated by {work.source ?? 'the source'}. Source labels, kept
+                    as given and never merged with Noema&rsquo;s vocabulary.
                   </p>
-                )}
-                {work.source && (
-                  // Attribution is owed. Adapter names and ingestion internals
-                  // are not, and are not here.
-                  <p className="mt-1 text-xs text-slate-500">
-                    Record from {work.source}
-                  </p>
-                )}
+                  {work.genres.length > 0 ? (
+                    <LabelList
+                      items={work.genres}
+                      noun="genres"
+                      limit={6}
+                      className="mt-6 font-display text-lg font-light leading-relaxed text-paper"
+                    />
+                  ) : (
+                    <p className="mt-6 font-display text-lg font-light italic text-paper-faint">
+                      This source states no genres for this work.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
+          </section>
 
-            <section aria-labelledby="synopsis-heading">
-              <h2 id="synopsis-heading" className="text-sm font-medium text-slate-300">
-                Synopsis
-              </h2>
-              {work.synopsis ? (
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  {work.synopsis}
-                </p>
-              ) : (
-                <p className="mt-2 text-sm italic text-slate-600">
-                  No synopsis available. The source that supplied this record did not
-                  include one.
-                </p>
-              )}
-            </section>
-
-            {work.genres.length > 0 && (
-              <section aria-labelledby="genres-heading">
-                <h2 id="genres-heading" className="text-sm font-medium text-slate-300">
-                  Genres
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  As stated by {work.source ?? 'the source'}.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {work.genres.map((genre) => (
-                    <span
-                      key={genre}
-                      className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300"
-                    >
-                      {genre}
-                    </span>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <section aria-labelledby="concepts-heading">
-              <h2 id="concepts-heading" className="text-sm font-medium text-slate-300">
-                Themes
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Noema&rsquo;s own vocabulary, shared across every medium. This is what
-                your taste profile is built from.
+          {/* --- you and this work ------------------------------------ */}
+          <section aria-labelledby="your-state-heading" className="border-b border-paper/10">
+            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
+              <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+                Yours alone
               </p>
-              {work.concepts.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {work.concepts.map((concept) => (
-                    <span
-                      key={concept.slug}
-                      title={concept.concept_type}
-                      className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-400"
-                    >
-                      {concept.name}
-                    </span>
-                  ))}
+              <h2
+                id="your-state-heading"
+                className="mt-4 font-display text-3xl font-light leading-[1.1] text-paper md:text-[2.4rem]"
+              >
+                You and this work
+              </h2>
+
+              {!account ? (
+                <div className="mt-10">
+                  <SignInPrompt
+                    detail="Sign in to track this. Adding and rating works is what Noema learns your taste from."
+                    onLogin={() => onNavigate('login')}
+                    onRegister={() => onNavigate('register')}
+                  />
                 </div>
               ) : (
-                <p className="mt-2 text-sm italic text-slate-600">
-                  No themes associated with this work yet. That is a gap in
-                  Noema&rsquo;s data, not a statement about the work.
-                </p>
-              )}
-            </section>
+                <div className="mt-12 grid gap-12 lg:grid-cols-2 lg:gap-16 lg:divide-x lg:divide-paper/10">
+                  {/* --- where you are with it ------------------------- */}
+                  <div className="lg:pr-16">
+                    <p className="font-display text-2xl font-light text-paper">
+                      {held && state
+                        ? statusLabel(state.status)
+                        : state
+                          ? 'Removed from your library'
+                          : 'Not in your library'}
+                    </p>
 
-            <p className="border-t border-slate-800 pt-4 text-xs text-slate-600">
+                    {state && (
+                      <p className="mt-3 text-[0.62rem] uppercase tracking-label text-paper-faint">
+                        {relationshipDates(state)
+                          .map((date) => `${date.label} ${date.formatted}`)
+                          .join(' · ')}
+                      </p>
+                    )}
+
+                    <div className="mt-8">
+                      <StatusControl
+                        title={work.title}
+                        state={state}
+                        domainSlug={work.domain.slug}
+                        busy={busy}
+                        onAdd={() => void act(() => addToLibrary(work.id))}
+                        onStatus={(status: LibraryStatus) =>
+                          void act(() => updateLibraryEntry(work.id, { status }))
+                        }
+                        onRemove={() => void act(() => removeFromLibrary(work.id))}
+                        // `act` holds `busy` for the whole round trip and
+                        // every control is disabled while it does, so a
+                        // second press cannot land before the first has been
+                        // counted.
+                        onReconsume={() => void act(() => recordReconsumption(work.id))}
+                        onUndoReconsume={() =>
+                          void act(() => undoReconsumption(work.id))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {/* --- what you made of it -------------------------- */}
+                  <div className="lg:pl-16">
+                    {held && state ? (
+                      <>
+                        <RatingControl
+                          title={work.title}
+                          rating={state.rating}
+                          busy={busy}
+                          onRate={(rating) =>
+                            void act(() =>
+                              updateLibraryEntry(work.id, { rating, rating_set: true }),
+                            )
+                          }
+                        />
+
+                        {/*
+                          Stated once and quietly. Not a claim that anything
+                          has been recalculated -- the taste profile is
+                          derived per request, and a rating is one more input.
+                        */}
+                        {state.rating !== null && (
+                          <p className="mt-6 text-[0.85rem] leading-relaxed text-paper-faint">
+                            Your rating helps Noema understand your taste.{' '}
+                            <button
+                              type="button"
+                              onClick={() => onNavigate('taste')}
+                              className="border-b border-paper/25 text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                            >
+                              See your taste profile
+                            </button>
+                          </p>
+                        )}
+
+                        {history && (
+                          <div className="mt-10 border-t border-paper/10 pt-8">
+                            <WorkHistory history={history} />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="max-w-sm font-display text-lg font-light leading-relaxed text-paper-faint">
+                        Rating comes after adding. Noema learns from what you have
+                        actually read and watched, so there is nothing to say about
+                        this one yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {actionError && (
+                <div className="mt-10">
+                  <StateMessage
+                    kind="error"
+                    title="That did not work."
+                    detail={actionError}
+                  />
+                </div>
+              )}
+
+              {staleError && (
+                <div className="mt-10">
+                  <StateMessage
+                    kind="error"
+                    title="Saved, but this page is out of date."
+                    detail={staleError}
+                    action={
+                      <button
+                        type="button"
+                        onClick={() => void load()}
+                        className="border-b border-accent pb-0.5 text-[0.85rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      >
+                        Reload this work
+                      </button>
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* --- where the record came from --------------------------- */}
+          <section className="mx-auto max-w-page px-5 py-12 sm:px-6 lg:px-10">
+            <p className="max-w-2xl text-[0.8rem] leading-relaxed text-paper-faint">
+              {work.source && (
+                <>
+                  {/*
+                    Attribution is owed. Adapter names and ingestion internals
+                    are not, and are not here.
+                  */}
+                  Record from {work.source}.{' '}
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => onOpenCorpusViewer(work.id)}
-                className="underline hover:text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+                className="border-b border-paper/25 text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 Open in the corpus viewer
               </button>{' '}
               — the development surface, with ingestion provenance and the stored
               text.
             </p>
-          </div>
-
-          {/* --- this reader's own state, fenced off ---------------------- */}
-          <aside
-            aria-labelledby="your-state-heading"
-            className="w-full shrink-0 space-y-3 lg:w-72"
-          >
-            <h2 id="your-state-heading" className="text-sm font-medium text-slate-300">
-              You and this work
-            </h2>
-
-            {!account ? (
-              <StateMessage
-                kind="empty"
-                title="Sign in to track this."
-                detail="Adding and rating works is what Noema learns your taste from."
-                action={
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('library')}
-                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
-                  >
-                    Sign in
-                  </button>
-                }
-              />
-            ) : (
-              <div className="space-y-4 rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-                {state && state.in_library && (
-                  <p className="text-sm text-slate-200">
-                    In your library ·{' '}
-                    <span className="font-medium">{statusLabel(state.status)}</span>
-                  </p>
-                )}
-
-                <StatusControl
-                  title={work.title}
-                  state={state}
-                  busy={busy}
-                  onAdd={() => void act(() => addToLibrary(work.id))}
-                  onStatus={(status: LibraryStatus) =>
-                    void act(() => updateLibraryEntry(work.id, { status }))
-                  }
-                  onRemove={() => void act(() => removeFromLibrary(work.id))}
-                />
-
-                {state && state.in_library && (
-                  <>
-                    <RatingControl
-                      title={work.title}
-                      rating={state.rating}
-                      busy={busy}
-                      onRate={(rating) =>
-                        void act(() =>
-                          updateLibraryEntry(work.id, { rating, rating_set: true }),
-                        )
-                      }
-                    />
-
-                    {state.times_completed > 1 && (
-                      <p className="text-xs text-slate-400">
-                        You have finished this {state.times_completed} times.
-                      </p>
-                    )}
-
-                    {history && <WorkHistory history={history} />}
-                  </>
-                )}
-
-                {actionError && (
-                  <p
-                    role="alert"
-                    className="rounded-lg border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300"
-                  >
-                    {actionError}
-                  </p>
-                )}
-
-                {/*
-                  The learning loop, stated once and quietly. Not a claim that
-                  anything has been recalculated -- the taste profile is
-                  derived per request, and a rating is one more input to it.
-                */}
-                {state && state.in_library && state.rating !== null && (
-                  <p className="text-xs text-slate-500">
-                    Your rating helps Noema understand your taste.{' '}
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('taste')}
-                      className="underline hover:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
-                    >
-                      See your taste profile
-                    </button>
-                  </p>
-                )}
-              </div>
-            )}
-          </aside>
-        </div>
+          </section>
+        </>
       )}
     </AppShell>
   )

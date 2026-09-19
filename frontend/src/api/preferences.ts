@@ -1,5 +1,5 @@
 import type { PreferenceOverview } from '../types/api'
-import { authenticatedRequest } from './library'
+import { authenticatedRequest } from './client'
 
 /**
  * The preference page's data.

@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkPage from './WorkPage'
-import { setSessionToken } from '../api/library'
+import { setSessionToken } from '../api/client'
+import { resetSessionForTests } from '../auth/session'
 import { ANIME, WORK, presentation, userState, workHistory } from '../test/fixtures'
 import type { UserWorkState } from '../types/api'
 
@@ -31,6 +32,8 @@ interface Options {
   loadFails?: boolean
   hang?: boolean
   writeFails?: boolean
+  /** Fail every work read *after* the first, so a write lands then goes stale. */
+  refetchFails?: boolean
 }
 
 let calls: { url: string; init?: RequestInit }[] = []
@@ -38,6 +41,7 @@ let calls: { url: string; init?: RequestInit }[] = []
 function mockApi(options: Options = {}) {
   calls = []
   let state = options.state ?? null
+  let reads = 0
   return vi.fn((input: string | URL, init?: RequestInit) => {
     const url = String(input)
     calls.push({ url, init })
@@ -71,9 +75,32 @@ function mockApi(options: Options = {}) {
           json: () => Promise.resolve({ detail: 'already in your library' }),
         } as Response)
       }
+      if (init?.method === 'DELETE' && url.endsWith('/completions')) {
+        if (state && state.times_completed <= 1) {
+          // What the server answers at the floor.
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            json: () =>
+              Promise.resolve({ detail: 'this work has only one recorded completion' }),
+          } as Response)
+        }
+        state = state
+          ? { ...state, times_completed: state.times_completed - 1 }
+          : null
+        return json(presentation(options.work ?? WORK, state))
+      }
       if (init?.method === 'DELETE') {
         state = state ? { ...state, in_library: false } : null
         return Promise.resolve({ ok: true, status: 204 } as Response)
+      }
+      if (init?.method === 'POST' && url.endsWith('/completions')) {
+        // The server's count, not the client's: the page re-renders from
+        // what comes back rather than adding one to its own copy.
+        state = state
+          ? { ...state, times_completed: state.times_completed + 1 }
+          : null
+        return json(presentation(options.work ?? WORK, state))
       }
       if (init?.method === 'POST') {
         state = userState()
@@ -86,6 +113,14 @@ function mockApi(options: Options = {}) {
       }
     }
     if (url.includes('/api/v1/works/')) {
+      reads += 1
+      if (options.refetchFails && reads > 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          json: () => Promise.resolve({ detail: 'the catalogue is unavailable' }),
+        } as Response)
+      }
       if (options.hang) return new Promise<Response>(() => {})
       if (options.loadFails) {
         return Promise.resolve({
@@ -123,6 +158,7 @@ function writes() {
 
 describe('WorkPage', () => {
   beforeEach(() => {
+    resetSessionForTests()
     setSessionToken('test-token-abc')
     vi.unstubAllGlobals()
   })
@@ -139,7 +175,8 @@ describe('WorkPage', () => {
     expect(screen.getByText(/Anime · TV · 1998/)).toBeInTheDocument()
     expect(screen.getByText('Bounty hunters in space.')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Genres' })).toBeInTheDocument()
-    expect(screen.getByText('Action')).toBeInTheDocument()
+    // Set as a sentence rather than one per line; the values stay distinct.
+    expect(screen.getByText(/Action, Sci-Fi/)).toBeInTheDocument()
   })
 
   it('states an absent synopsis and absent credits rather than hiding them', async () => {
@@ -184,7 +221,7 @@ describe('WorkPage', () => {
     const user = userEvent.setup()
     renderPage({ loadFails: true })
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('work not found')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Work not found.')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(calls.filter((call) => call.url.includes('/api/v1/works/')).length).toBeGreaterThan(1)
   })
@@ -193,8 +230,11 @@ describe('WorkPage', () => {
     renderPage({}, { account: null })
 
     expect(await screen.findByRole('heading', { level: 1, name: /Alice/ })).toBeInTheDocument()
-    expect(screen.getByText('Sign in to track this.')).toBeInTheDocument()
+    expect(screen.getByText(/Sign in to track this\./)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Status for/)).not.toBeInTheDocument()
+    // The canonical half is whole; only the reader's half is withheld.
+    expect(screen.getByText(/No synopsis available/)).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 
   // --- the interaction loop ------------------------------------------------
@@ -309,35 +349,195 @@ describe('WorkPage', () => {
 
   // --- reconsumption -------------------------------------------------------
 
-  it('offers a completed work as something to read again', async () => {
-    renderPage({ state: userState({ status: 'completed', rating: 9 }) })
+  it('states the count on a completed work rather than asking a question', async () => {
+    renderPage({ state: userState({ status: 'completed', times_completed: 1, rating: 9 }) })
 
-    expect(await screen.findByRole('button', { name: 'Read it again' })).toBeInTheDocument()
-    // Reading it again is a status move, not a separate concept.
+    expect(await screen.findByText('Read 1 time')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Read again' })).toBeInTheDocument()
+    // The old prompt, and the word for the concept, are both gone.
+    expect(screen.queryByRole('button', { name: 'Read it again' })).not.toBeInTheDocument()
     expect(screen.queryByText(/reconsum/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/read it again\?/i)).not.toBeInTheDocument()
   })
 
-  it('reads a work again by moving it back to in progress', async () => {
+  it('records another completion without moving the status', async () => {
     const user = userEvent.setup()
-    renderPage({ state: userState({ status: 'completed', rating: 9 }) })
+    renderPage({ state: userState({ status: 'completed', times_completed: 1, rating: 9 }) })
 
-    await user.click(await screen.findByRole('button', { name: 'Read it again' }))
+    await user.click(await screen.findByRole('button', { name: 'Read again' }))
 
     await waitFor(() => {
-      const patch = writes().filter((call) => call.init?.method === 'PATCH').pop()
-      expect(JSON.parse(String(patch?.init?.body))).toEqual({ status: 'in_progress' })
+      const posted = writes().filter((call) => call.url.endsWith('/completions'))
+      expect(posted).toHaveLength(1)
     })
-    // No rating was invented, and no second entry created.
+    // The old route -- a PATCH back to in_progress -- is not taken, and no
+    // rating is written in either direction.
+    expect(writes().filter((call) => call.init?.method === 'PATCH')).toHaveLength(0)
     expect(
       writes().every((call) => !String(call.init?.body ?? '').includes('rating')),
     ).toBe(true)
-    expect(writes().filter((call) => call.init?.method === 'POST')).toHaveLength(0)
   })
 
-  it('reports how many times a work has been finished', async () => {
+  it('shows the new count after recording one, from the server', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: userState({ status: 'completed', times_completed: 2, rating: 9 }) })
+
+    expect(await screen.findByText('Read 2 times')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Read again' }))
+
+    expect(await screen.findByText('Read 3 times')).toBeInTheDocument()
+  })
+
+  it('keeps the rating across a recorded re-read', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: userState({ status: 'completed', times_completed: 1, rating: 9 }) })
+
+    await user.click(await screen.findByRole('button', { name: 'Read again' }))
+
+    // Still the reader's own 9, neither cleared nor asked for again.
+    expect(await screen.findByText(/You rated this 9 out of 10/)).toBeInTheDocument()
+  })
+
+  it('says watched, not read, for an anime', async () => {
+    renderPage({
+      work: ANIME,
+      state: userState({ status: 'completed', times_completed: 2 }),
+    })
+
+    expect(await screen.findByText('Watched 2 times')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Watch again' })).toBeInTheDocument()
+    expect(screen.queryByText(/Read \d/)).not.toBeInTheDocument()
+  })
+
+  it('offers no completion control until something has been completed', async () => {
+    renderPage({ state: userState({ status: 'in_progress', times_completed: 0 }) })
+
+    expect(await screen.findByRole('button', { name: 'Mark completed' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Read again' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Read 0 times/)).not.toBeInTheDocument()
+  })
+
+  it('never records a completion just by rendering or reloading', async () => {
+    const { rerender } = renderPage({
+      state: userState({ status: 'completed', times_completed: 1 }),
+    })
+
+    expect(await screen.findByText('Read 1 time')).toBeInTheDocument()
+    for (let i = 0; i < 3; i += 1) {
+      rerender(
+        <WorkPage
+          workId="work-1"
+          onNavigate={() => {}}
+          onBack={() => {}}
+          onOpenCorpusViewer={() => {}}
+          account="reader@example.test"
+        />,
+      )
+    }
+
+    expect(writes().filter((call) => call.url.endsWith('/completions'))).toHaveLength(0)
+    expect(await screen.findByText('Read 1 time')).toBeInTheDocument()
+  })
+
+  it('offers a way down as well as a way up', async () => {
     renderPage({ state: userState({ status: 'completed', times_completed: 3 }) })
 
-    expect(await screen.findByText('You have finished this 3 times.')).toBeInTheDocument()
+    expect(await screen.findByText('Read 3 times')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Record another read/ }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Remove one recorded read/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('takes a completion back when asked', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: userState({ status: 'completed', times_completed: 3, rating: 8 }) })
+
+    await user.click(
+      await screen.findByRole('button', { name: /Remove one recorded read/ }),
+    )
+
+    expect(await screen.findByText('Read 2 times')).toBeInTheDocument()
+    await waitFor(() => {
+      const undone = writes().filter(
+        (call) => call.init?.method === 'DELETE' && call.url.endsWith('/completions'),
+      )
+      expect(undone).toHaveLength(1)
+    })
+  })
+
+  it('will not go below a single reading', async () => {
+    renderPage({ state: userState({ status: 'completed', times_completed: 1 }) })
+
+    expect(await screen.findByText('Read 1 time')).toBeInTheDocument()
+    // Disabled rather than hidden, so the pair does not move under the
+    // cursor as the count changes.
+    expect(screen.getByRole('button', { name: /Remove one recorded read/ })).toBeDisabled()
+  })
+
+  it('keeps the rating when a completion is taken back', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: userState({ status: 'completed', times_completed: 3, rating: 8 }) })
+
+    await user.click(
+      await screen.findByRole('button', { name: /Remove one recorded read/ }),
+    )
+
+    expect(await screen.findByText('Read 2 times')).toBeInTheDocument()
+    expect(screen.getByText(/You rated this 8 out of 10/)).toBeInTheDocument()
+    // The correction writes no rating, in the request as in storage.
+    expect(
+      writes().every((call) => !String(call.init?.body ?? '').includes('rating')),
+    ).toBe(true)
+  })
+
+  it('leaves the work completed and in the library after a correction', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: userState({ status: 'completed', times_completed: 2 }) })
+
+    await user.click(
+      await screen.findByRole('button', { name: /Remove one recorded read/ }),
+    )
+
+    expect(await screen.findByText('Read 1 time')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Remove .* from your library/ }),
+    ).toBeInTheDocument()
+    expect((screen.getByLabelText(/Status for/) as HTMLSelectElement).value).toBe('completed')
+  })
+
+  it('counts up and back down again', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: userState({ status: 'completed', times_completed: 2 }) })
+
+    await user.click(await screen.findByRole('button', { name: /Record another read/ }))
+    expect(await screen.findByText('Read 3 times')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Remove one recorded read/ }))
+    expect(await screen.findByText('Read 2 times')).toBeInTheDocument()
+  })
+
+  it('says watch, not read, on the controls for an anime', async () => {
+    renderPage({
+      work: ANIME,
+      state: userState({ status: 'completed', times_completed: 2 }),
+    })
+
+    expect(await screen.findByText('Watched 2 times')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Remove one recorded watched/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no counter at all until something has been completed', async () => {
+    renderPage({ state: userState({ status: 'in_progress', times_completed: 0 }) })
+
+    await screen.findByRole('button', { name: 'Mark completed' })
+    expect(
+      screen.queryByRole('button', { name: /Remove one recorded/ }),
+    ).not.toBeInTheDocument()
   })
 
   // --- history -------------------------------------------------------------
@@ -398,7 +598,7 @@ describe('WorkPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Add to library' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('already in your library')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Already in your library.')
   })
 
   it('re-reads the work after a write rather than guessing the new state', async () => {
@@ -413,6 +613,45 @@ describe('WorkPage', () => {
       )
       expect(reads.length).toBeGreaterThan(1)
     })
+  })
+
+  it('reports a failed write as a failed write', async () => {
+    const user = userEvent.setup()
+    renderPage({ state: null, writeFails: true })
+
+    await user.click(await screen.findByRole('button', { name: 'Add to library' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('That did not work.')
+    // Nothing claims the change was saved, because it was not.
+    expect(screen.queryByText(/Your change was saved/)).not.toBeInTheDocument()
+  })
+
+  it('does not call a saved change lost when only the refresh fails', async () => {
+    // The PATCH lands; the re-read after it does not. Telling the reader
+    // their rating failed would be false, and would invite them to send it
+    // again over a value the server already holds.
+    const user = userEvent.setup()
+    renderPage({ state: userState(), refetchFails: true })
+
+    await user.selectOptions(await screen.findByLabelText(/Status for/), 'completed')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Saved, but this page is out of date.')
+    expect(screen.queryByText('That did not work.')).not.toBeInTheDocument()
+    // The write really did go out, exactly once.
+    const patches = writes().filter((call) => call.init?.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(JSON.parse(String(patches[0].init?.body))).toEqual({ status: 'completed' })
+    // And the work is still on screen rather than replaced by an error page.
+    expect(screen.getByRole('heading', { level: 1, name: /Alice/ })).toBeInTheDocument()
+  })
+
+  it('asks for no library data at all while anonymous', async () => {
+    renderPage({ state: userState() }, { account: null })
+
+    await screen.findByRole('heading', { level: 1, name: /Alice/ })
+    expect(calls.filter((call) => call.url.includes('/api/v1/library'))).toHaveLength(0)
   })
 
   it('never names a user in a request', async () => {

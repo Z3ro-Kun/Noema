@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Home from './Home'
-import { setSessionToken } from '../api/library'
+import { setSessionToken } from '../api/client'
+import { resetSessionForTests, setAuthenticatedForTests } from '../auth/session'
 import {
   ACCOUNT,
   ANIME,
@@ -120,14 +121,13 @@ function mockApi(options: Options = {}) {
 }
 
 function renderPage(options: Options = {}, props: Record<string, unknown> = {}) {
-  if (options.signedIn) setSessionToken('test-token-abc')
+  if (options.signedIn) setAuthenticatedForTests(ACCOUNT.email)
   vi.stubGlobal('fetch', mockApi(options))
   return render(
     <Home
       onNavigate={() => {}}
       onOpenWork={() => {}}
       onExplore={() => {}}
-      onOpenPreferenceEvidence={() => {}}
       {...props}
     />,
   )
@@ -135,6 +135,7 @@ function renderPage(options: Options = {}, props: Record<string, unknown> = {}) 
 
 describe('Home, signed out', () => {
   beforeEach(() => {
+    resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
@@ -150,6 +151,19 @@ describe('Home, signed out', () => {
     expect(screen.getByText(/Browsing is open to everyone/)).toBeInTheDocument()
   })
 
+  it('introduces Noema rather than featuring a work', async () => {
+    renderPage()
+
+    // The landing is about the product. An earlier pass featured whichever
+    // work sorted first, which put a record with no synopsis in the most
+    // prominent position on the page.
+    expect(
+      await screen.findByRole('heading', { name: /Keep what you read and watch in one place/ }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/not a rating site and not a recommender/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'How it works' })).toBeInTheDocument()
+  })
+
   it('names the three media it covers', async () => {
     renderPage()
 
@@ -159,26 +173,37 @@ describe('Home, signed out', () => {
     }
   })
 
-  it('shows real works from the public listing', async () => {
+  it('names no work, and asks the API for nothing', async () => {
     renderPage()
 
-    expect(await screen.findByText("Alice's Adventures in Wonderland")).toBeInTheDocument()
-    expect(screen.getByText('Cowboy Bebop')).toBeInTheDocument()
+    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+
+    // The catalogue and its detail are the signed-in experience. Nothing on
+    // the landing names a work, and no request goes out to fetch one.
+    expect(screen.queryByText("Alice's Adventures in Wonderland")).not.toBeInTheDocument()
+    expect(screen.queryByText('Cowboy Bebop')).not.toBeInTheDocument()
+    expect(requests.filter((url) => url.includes('/api/v1/works'))).toHaveLength(0)
+    expect(requests.filter((url) => url.includes('/api/v1/library'))).toHaveLength(0)
+    expect(requests.filter((url) => url.includes('/preferences'))).toHaveLength(0)
   })
 
   it('exposes no private user information', async () => {
     const { container } = renderPage()
 
-    await screen.findByText('Cowboy Bebop')
+    await screen.findByRole('heading', { level: 1, name: 'Noema' })
     const rendered = container.textContent ?? ''
     expect(rendered).not.toContain('reader@example.test')
     expect(rendered).not.toMatch(/Your library|Recent activity|Your taste/)
+    // No synopsis, no rating, no library state -- there is no work here at all.
+    expect(rendered).not.toMatch(/rated \d+\/10|In your library|No synopsis/)
   })
 
-  it('reports a failure instead of an empty shelf', async () => {
+  it('cannot be broken by a catalogue failure it never calls', async () => {
     renderPage({ worksFail: true })
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('the catalogue is unavailable')
+    // Nothing is fetched, so there is nothing to fail.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('carries a chosen medium into Discover', async () => {
@@ -192,18 +217,36 @@ describe('Home, signed out', () => {
     expect(explore).toHaveBeenCalledWith({ domain: 'anime' })
   })
 
-  it('opens a work from the sample', async () => {
+  it('routes to the catalogue without naming anything in it', async () => {
     const user = userEvent.setup()
-    const open = vi.fn()
-    renderPage({}, { onOpenWork: open })
+    const navigate = vi.fn()
+    renderPage({}, { onNavigate: navigate })
 
-    await user.click(await screen.findByText('Cowboy Bebop'))
-    expect(open).toHaveBeenCalledWith('work-2')
+    await user.click(
+      await screen.findByRole('button', { name: 'Browse the catalogue first' }),
+    )
+    expect(navigate).toHaveBeenCalledWith('discover')
+  })
+
+  it('triggers no library action for an anonymous visitor', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+    // There is no add control at all, and nothing here can write.
+    expect(screen.queryByRole('button', { name: /Add to library/ })).not.toBeInTheDocument()
+
+    // Two CTAs point at Register -- the hero and the sign-in block.
+    await user.click(screen.getAllByRole('button', { name: 'Create an account' })[0])
+    expect(
+      requests.filter((url) => url.includes('/api/v1/library')),
+    ).toHaveLength(0)
   })
 })
 
 describe('Home, signed in', () => {
   beforeEach(() => {
+    resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
@@ -339,24 +382,28 @@ describe('Home, signed in', () => {
 
   // --- routes out ----------------------------------------------------------
 
-  it('offers routes into Discover', async () => {
-    const user = userEvent.setup()
-    const navigate = vi.fn()
-    renderPage({ signedIn: true }, { onNavigate: navigate })
+  it('does not repeat the global navigation at the foot of the page', async () => {
+    renderPage({ signedIn: true, library: [presentation(ANIME, userState())] })
 
-    await screen.findByRole('heading', { name: 'Explore' })
-    await user.click(screen.getByRole('button', { name: 'All works' }))
-    expect(navigate).toHaveBeenCalledWith('discover')
+    await screen.findByRole('heading', { name: 'Recent activity' })
+
+    // TopNav already carries Home / Discover / Library / Your Taste. A second
+    // set at the bottom was redundant, and read as a container dropped into
+    // the page rather than part of it.
+    expect(screen.queryByRole('button', { name: 'All works' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Explore' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Preference evidence' }),
+    ).not.toBeInTheDocument()
   })
 
-  it('keeps the preference-evidence surface reachable', async () => {
-    const user = userEvent.setup()
-    const open = vi.fn()
-    renderPage({ signedIn: true }, { onOpenPreferenceEvidence: open })
+  it('closes with the thesis rather than another navigation surface', async () => {
+    renderPage({ signedIn: true, library: [presentation(ANIME, userState())] })
 
-    await screen.findByRole('heading', { name: 'Explore' })
-    await user.click(screen.getByRole('button', { name: 'Preference evidence' }))
-    expect(open).toHaveBeenCalled()
+    await screen.findByRole('heading', { name: 'Recent activity' })
+    expect(
+      screen.getByText(/Noema reads your ratings, not your reasons/),
+    ).toBeInTheDocument()
   })
 
   it('signs the reader out', async () => {
@@ -380,7 +427,7 @@ describe('Home, signed in', () => {
       library: [presentation(ANIME, userState())],
     })
 
-    await screen.findByRole('heading', { name: 'Explore' })
+    await screen.findByRole('heading', { name: 'Recent activity' })
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('heading', { level: 2 }).length).toBeGreaterThanOrEqual(3)
     for (const button of screen.getAllByRole('button')) {

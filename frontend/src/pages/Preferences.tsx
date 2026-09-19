@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import SignInPanel from '../components/SignInPanel'
+import SignInPrompt from '../components/SignInPrompt'
 import { fetchPreferenceOverview } from '../api/preferences'
-import { useSession } from '../hooks/useSession'
+import { useSession } from '../auth/session'
 import type {
   ConfidenceBand,
   ContributingWork,
@@ -72,6 +72,8 @@ const CONFIDENCE_LABELS: Record<ConfidenceBand, string> = {
 
 interface PreferencesProps {
   onBack: () => void
+  /** Sends an anonymous reader to the login page. */
+  onSignIn: () => void
 }
 
 function DirectionBadge({ direction }: { direction: PreferenceDirection }) {
@@ -226,7 +228,7 @@ function HowThisWorks() {
   )
 }
 
-export default function Preferences({ onBack }: PreferencesProps) {
+export default function Preferences({ onBack, onSignIn }: PreferencesProps) {
   const session = useSession()
   const [overview, setOverview] = useState<PreferenceOverview | null>(null)
   const [loading, setLoading] = useState(false)
@@ -281,10 +283,10 @@ export default function Preferences({ onBack }: PreferencesProps) {
         {session.loading ? (
           <p className="text-sm text-slate-400">Checking your session&hellip;</p>
         ) : !session.account ? (
-          <SignInPanel
-            busy={session.busy}
-            onSignIn={session.signIn}
-            onRegister={session.signUp}
+          <SignInPrompt
+            detail="Preference evidence is built from your own ratings, so it needs an account."
+            onLogin={onSignIn}
+            onRegister={onSignIn}
           />
         ) : (
           <>

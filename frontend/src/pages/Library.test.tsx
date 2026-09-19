@@ -1,8 +1,10 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Library from './Library'
-import { setSessionToken } from '../api/library'
+import { setSessionToken } from '../api/client'
+import { resetSessionForTests, signIn } from '../auth/session'
+import { getSessionToken } from '../api/client'
 
 /**
  * The reader's own library.
@@ -59,6 +61,8 @@ const VINLAND = {
 
 const WORKS = [{ work: FRANKENSTEIN, user_state: null }, { work: VINLAND, user_state: null }]
 
+const REMOVED_AT = '2026-09-19T10:00:00Z'
+
 const SESSION = {
   access_token: 'test-token-abc',
   token_type: 'bearer',
@@ -91,8 +95,15 @@ function interaction(overrides: Record<string, unknown> = {}) {
   }
 }
 
+type Entry = { user_state: { status: string; in_library?: boolean } | null }
+
+/** Held entries only, the way the server's default listing filters. */
+function held(entries: Entry[]): Entry[] {
+  return entries.filter((entry) => entry.user_state?.in_library !== false)
+}
+
 /** Every status present, as the summary endpoint guarantees. */
-function summaryFor(entries: { user_state: { status: string } | null }[]) {
+function summaryFor(entries: Entry[]) {
   const counts: Record<string, number> = {
     planned: 0,
     in_progress: 0,
@@ -100,13 +111,13 @@ function summaryFor(entries: { user_state: { status: string } | null }[]) {
     completed: 0,
     abandoned: 0,
   }
-  for (const entry of entries) {
+  for (const entry of held(entries)) {
     if (entry.user_state) counts[entry.user_state.status] += 1
   }
   return {
-    total: entries.length,
+    total: held(entries).length,
     by_status: counts,
-    removed: 0,
+    removed: entries.length - held(entries).length,
     rated: 0,
   }
 }
@@ -133,7 +144,21 @@ function mockApi(library: unknown[] = []) {
       }
       if (init?.method === 'POST') return json(interaction(), 201)
       if (init?.method === 'PATCH') return json(interaction())
-      return json({ items: library, total: library.length, page: 1, page_size: 24 })
+      // Filtered the way the server filters, so a client that asks for one
+      // status cannot be handed the whole library and look correct.
+      const params = new URL(url, 'http://localhost').searchParams
+      const status = params.get('status')
+      const includeRemoved = params.get('include_removed') === 'true'
+      let items = library as Entry[]
+      if (!includeRemoved) items = held(items)
+      if (status) items = items.filter((entry) => entry.user_state?.status === status)
+      const size = Number(params.get('page_size') ?? 24)
+      return json({
+        items: items.slice(0, size),
+        total: items.length,
+        page: Number(params.get('page') ?? 1),
+        page_size: size,
+      })
     }
     if (url.includes('/works')) return json(WORKS)
     return json([])
@@ -141,14 +166,22 @@ function mockApi(library: unknown[] = []) {
   return { fetchMock, calls }
 }
 
-async function signIn(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText('Email'), 'reader@example.test')
-  await user.type(screen.getByLabelText('Password'), 'a-long-enough-password')
-  await user.click(screen.getByRole('button', { name: 'Log in' }))
+/**
+ * Authenticate through the shared session store.
+ *
+ * The login form no longer lives on this page -- there is one Login page now
+ * -- so a test signs in the way the application does: by driving the store
+ * every component observes.
+ */
+async function authenticate(_user?: ReturnType<typeof userEvent.setup>) {
+  await act(async () => {
+    await signIn('reader@example.test', 'a-long-enough-password')
+  })
 }
 
 describe('Library dev harness', () => {
   beforeEach(() => {
+    resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
@@ -159,8 +192,23 @@ describe('Library dev harness', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
 
-    expect(screen.getByLabelText('Email')).toBeInTheDocument()
+    // A prompt pointing at the Login page, not a second login form.
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+  })
+
+  it('sends an anonymous reader to the Login page', async () => {
+    const user = userEvent.setup()
+    const { fetchMock } = mockApi()
+    vi.stubGlobal('fetch', fetchMock)
+    const navigate = vi.fn()
+
+    render(<Library onNavigate={navigate} onOpenWork={() => {}} />)
+    await user.click(screen.getByRole('button', { name: 'Log in' }))
+
+    expect(navigate).toHaveBeenCalledWith('login')
   })
 
   it('sends the bearer token on library requests after signing in', async () => {
@@ -169,7 +217,7 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     // The tab strip is what says a signed-in library is on screen; the
      // "Your library (N)" heading became the tabs in Phase 1Z.
@@ -189,7 +237,7 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
     // The distinction the page exists to hold, said in the empty state.
@@ -205,7 +253,7 @@ describe('Library dev harness', () => {
     const navigate = vi.fn()
 
     render(<Library onNavigate={navigate} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await user.click(await screen.findByRole('button', { name: 'Find something to add' }))
     expect(navigate).toHaveBeenCalledWith('discover')
@@ -217,9 +265,12 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
-    expect(await screen.findByText('Not rated yet')).toBeInTheDocument()
+    // Stated as an absence. Unrated is not a low score and must never be
+    // rendered as one.
+    expect(await screen.findByText(/not rated/)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/rated 0\/10/)
     const status = screen.getByLabelText('Status for Frankenstein')
     expect((status as HTMLSelectElement).value).toBe('completed')
   })
@@ -230,11 +281,12 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
-    expect(await screen.findByText('Rated 9/10')).toBeInTheDocument()
+    expect(await screen.findByText(/rated 9\/10/)).toBeInTheDocument()
     // Rating is the work page's job, where there is room to say what it means.
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Rate /)).not.toBeInTheDocument()
   })
 
   it('sends a status change on its own, and writes no rating', async () => {
@@ -243,7 +295,7 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await user.selectOptions(
       await screen.findByLabelText('Status for Frankenstein'),
@@ -266,7 +318,7 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await user.click(
       await screen.findByRole('button', {
@@ -287,14 +339,23 @@ describe('Library dev harness', () => {
     ).toBe(false)
   })
 
-  it('surfaces a server refusal instead of failing silently', async () => {
+  it('surfaces a refused library read instead of failing silently', async () => {
+    // Login failures belong to the Login page now; what this page must not
+    // swallow is a refusal on its own request.
     const fetchMock = vi.fn((input: string | URL) => {
       const url = String(input)
       if (url.includes('/auth/login')) {
         return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(SESSION),
+        } as Response)
+      }
+      if (url.includes('/api/v1/library')) {
+        return Promise.resolve({
           ok: false,
-          status: 401,
-          json: () => Promise.resolve({ detail: 'invalid email or password' }),
+          status: 503,
+          json: () => Promise.resolve({ detail: 'the library is unavailable' }),
         } as Response)
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response)
@@ -303,10 +364,11 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
-    expect(await screen.findByText('invalid email or password')).toBeInTheDocument()
-    expect(screen.queryByText(/Your library/)).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The library is unavailable.',
+    )
   })
 
   it('drops the token on logout', async () => {
@@ -315,13 +377,17 @@ describe('Library dev harness', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
     await screen.findByRole('tablist', { name: 'Library status' })
 
     await user.click(screen.getByRole('button', { name: 'Log out' }))
 
-    await waitFor(() => expect(screen.getByLabelText('Email')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument(),
+    )
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    // The shared store is anonymous again, and the token is gone with it.
+    expect(getSessionToken()).toBeNull()
   })
 })
 
@@ -337,28 +403,37 @@ describe('Library product surface', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     // Once, as a library entry. Browsing the shared corpus is Discover's job.
     expect(await screen.findAllByText('Vinland Saga')).toHaveLength(1)
     expect(screen.getByText('ヴィンランド・サガ')).toBeInTheDocument()
-    expect(screen.getByText(/Manga & Manhwa · MANGA · 2005/)).toBeInTheDocument()
-    expect(screen.getByText(/Makoto Yukimura \(Story & Art\)/)).toBeInTheDocument()
-    expect(screen.getByText('A young warrior among Viking raiders.')).toBeInTheDocument()
-    expect(screen.getByText('Action')).toBeInTheDocument()
-    expect(screen.getByText('Revenge')).toBeInTheDocument()
+    // Creator, medium and year on one quiet line -- enough to know which
+    // work this is, which is all a library row has to do.
+    expect(
+      screen.getByText(/Makoto Yukimura · Manga & Manhwa · MANGA · 2005/),
+    ).toBeInTheDocument()
   })
 
-  it('states plainly when a work has no synopsis', async () => {
-    const { fetchMock } = mockApi([interaction()])
+  it('leaves synopsis and label chips to the work page', async () => {
+    const { fetchMock } = mockApi([
+      { work: VINLAND, user_state: interaction().user_state },
+    ])
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
-    // Frankenstein's fixture has synopsis: null -- an absence, shown as one.
-    expect(await screen.findByText('No synopsis available')).toBeInTheDocument()
+    // A deliberate reduction: a library row says which work it is and what
+    // the reader did with it. Describing the work is the work page's job,
+    // and it still states an absent synopsis as an absence there.
+    await screen.findAllByText('Vinland Saga')
+    expect(
+      screen.queryByText('A young warrior among Viking raiders.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Action')).not.toBeInTheDocument()
+    expect(screen.queryByText('Revenge')).not.toBeInTheDocument()
   })
 
   it('never renders raw corpus text or internal provenance', async () => {
@@ -367,7 +442,7 @@ describe('Library product surface', () => {
     const user = userEvent.setup()
 
     const { container } = render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
     await screen.findAllByText('Vinland Saga')
 
     const rendered = container.textContent ?? ''
@@ -382,14 +457,14 @@ describe('Library product surface', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     // The user's half is labelled as theirs; the work's half is not.
-    expect(await screen.findByText('Your state')).toBeInTheDocument()
+    expect(await screen.findByText('Your relationship')).toBeInTheDocument()
     expect((screen.getByLabelText('Status for Frankenstein') as HTMLSelectElement).value).toBe(
       'completed',
     )
-    expect(screen.getByText('Rated 9/10')).toBeInTheDocument()
+    expect(screen.getByText(/rated 9\/10/)).toBeInTheDocument()
   })
 
   it('opens a work rather than duplicating its canonical record', async () => {
@@ -399,7 +474,7 @@ describe('Library product surface', () => {
     const open = vi.fn()
 
     render(<Library onNavigate={() => {}} onOpenWork={open} />)
-    await signIn(user)
+    await authenticate(user)
 
     await user.click(await screen.findByText('Frankenstein'))
     expect(open).toHaveBeenCalledWith('work-1')
@@ -412,7 +487,7 @@ describe('Library product surface', () => {
     const navigate = vi.fn()
 
     render(<Library onNavigate={navigate} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await screen.findByText('Frankenstein')
     const main = screen.getByRole('navigation', { name: 'Main' })
@@ -426,14 +501,19 @@ describe('Library product surface', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
-    expect(await screen.findByText('Completed 3 times')).toBeInTheDocument()
+    // Said in the medium's own verb, and as the count rather than the word.
+    expect(await screen.findByText('Read 3 times')).toBeInTheDocument()
   })
 })
 
 describe('Library status organisation', () => {
   beforeEach(() => {
+    // The store as well as the token: leaving a previous test's `account`
+    // behind makes the page mount authenticated with no token and fetch
+    // before this test has signed in.
+    resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
@@ -449,7 +529,7 @@ describe('Library status organisation', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     for (const heading of [
       'Reading & watching',
@@ -470,7 +550,7 @@ describe('Library status organisation', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     expect(await screen.findByText('Nothing planned yet.')).toBeInTheDocument()
     expect(screen.getByText('Nothing on hold yet.')).toBeInTheDocument()
@@ -483,7 +563,7 @@ describe('Library status organisation', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toContain('Completed1')
@@ -499,7 +579,7 @@ describe('Library status organisation', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await user.click(await screen.findByRole('tab', { name: /Completed/ }))
 
@@ -510,18 +590,219 @@ describe('Library status organisation', () => {
     )
   })
 
+  it('keeps the previous rows up while a tab switch is in flight', async () => {
+    // `loading` used to suppress the content while the "nothing yet" message
+    // was suppressed by having content, so a switch fell between the two and
+    // showed an empty page.
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // The grouped view asks for every status, completed included, so the
+    // gate is only armed once the first screen is up.
+    let armed = false
+
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      const json = (body: unknown) =>
+        ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as Response
+
+      if (url.includes('/auth/login')) return json(SESSION)
+      if (url.includes('/summary')) return json(summaryFor(MIXED))
+      if (url.includes('/api/v1/library')) {
+        const status = new URL(url, 'http://localhost').searchParams.get('status')
+        // Hold the tab the reader is switching to, and nothing else.
+        if (armed && status === 'completed') await gate
+        const items = status
+          ? MIXED.filter((entry) => entry.user_state?.status === status)
+          : MIXED
+        return json({ items, total: items.length, page: 1, page_size: 24 })
+      }
+      return json([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    // The grouped view holds the completed group too, so wait for the one
+    // group that is not gated.
+    await screen.findByRole('heading', { name: 'Reading & watching' })
+
+    armed = true
+    await user.click(screen.getByRole('tab', { name: /Completed/ }))
+
+    // Mid-flight: the previous view is still on screen, and the page says
+    // what it is doing rather than going blank.
+    expect(screen.getByRole('heading', { name: 'Reading & watching' })).toBeInTheDocument()
+    expect(await screen.findByText('Updating…')).toBeInTheDocument()
+
+    release?.()
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Reading & watching' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('heading', { name: 'Completed' })).toBeInTheDocument()
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+  })
+
   it('says what is missing when a chosen status is empty', async () => {
     const { fetchMock } = mockApi([interaction({ status: 'in_progress' })])
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await user.click(await screen.findByRole('tab', { name: /On hold/ }))
     // The mock returns the same list whatever the filter, so this checks the
     // grouped view's own empty sentence is reachable from the tab too.
     expect(await screen.findByRole('heading', { name: /On hold/ })).toBeInTheDocument()
+  })
+
+  it('never renders controls on a removed entry that the server refuses', async () => {
+    // `set_status` and `remove_from_library` both raise on an interaction
+    // whose `removed_at` is set, so the API answers 404. Offering those
+    // controls on a removed row is offering a guaranteed failure.
+    const { fetchMock } = mockApi([
+      interaction({ status: 'completed', rating: 9, in_library: false, removed_at: REMOVED_AT }),
+    ])
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await user.click(await screen.findByRole('button', { name: 'Show them' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Removed' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('Status for Frankenstein')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Remove Frankenstein from your library' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers the one path that does work: adding a removed entry back', async () => {
+    const { fetchMock, calls } = mockApi([
+      interaction({ status: 'completed', rating: 9, in_library: false, removed_at: REMOVED_AT }),
+    ])
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await user.click(await screen.findByRole('button', { name: 'Show them' }))
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Add Frankenstein back to your library',
+      }),
+    )
+
+    await waitFor(() => {
+      const posted = calls.find(
+        (call) =>
+          call.init?.method === 'POST' && call.url.endsWith('/api/v1/library'),
+      )
+      // The add endpoint revives the existing row; nothing here asks for a
+      // second interaction or tries to restore the rating by hand.
+      expect(JSON.parse(String(posted?.init?.body))).toEqual({ work_id: 'work-1' })
+    })
+    expect(
+      calls.every((call) => !String(call.init?.body ?? '').includes('rating')),
+    ).toBe(true)
+  })
+
+  it('says a removed entry is removed rather than showing it as held', async () => {
+    const { fetchMock } = mockApi([
+      interaction({ status: 'completed', rating: 9, in_library: false, removed_at: REMOVED_AT }),
+      { work: VINLAND, user_state: interaction({ status: 'completed' }).user_state },
+    ])
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await user.click(await screen.findByRole('button', { name: 'Show them' }))
+
+    // It is named as removed, and it is kept out of the status groups so it
+    // never sits beside works that are still on the shelf.
+    expect(await screen.findByRole('heading', { name: 'Removed' })).toBeInTheDocument()
+    const completed = screen
+      .getByRole('heading', { name: 'Completed' })
+      .closest('section') as HTMLElement
+    expect(within(completed).queryByText('Frankenstein')).not.toBeInTheDocument()
+    expect(within(completed).getByText('Vinland Saga')).toBeInTheDocument()
+  })
+
+  it('cannot show a group count that disagrees with the rows under it', async () => {
+    // Nine completed works, six shown. The count is the server's total for
+    // that status and the rows are a prefix of it, so the heading is never a
+    // description of what is on screen unless it says so.
+    const many = Array.from({ length: 9 }, (_, index) => ({
+      work: { ...FRANKENSTEIN, id: `work-${index}` },
+      user_state: interaction({ status: 'completed' }).user_state,
+    }))
+    const { fetchMock } = mockApi(many)
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+
+    const completed = (
+      await screen.findByRole('heading', { name: 'Completed' })
+    ).closest('section') as HTMLElement
+    expect(within(completed).getByText('9 works')).toBeInTheDocument()
+    expect(within(completed).getAllByRole('listitem')).toHaveLength(6)
+    // The shortfall is stated rather than left to be inferred.
+    expect(within(completed).getByText('Showing 6 of 9')).toBeInTheDocument()
+    expect(
+      within(completed).getByRole('button', { name: /See all/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('asks the server for each group rather than splitting one page', async () => {
+    const { fetchMock, calls } = mockApi([
+      interaction({ status: 'in_progress' }),
+      { work: VINLAND, user_state: interaction({ status: 'completed' }).user_state },
+    ])
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await screen.findByRole('heading', { name: 'Completed' })
+
+    // One request per status in the vocabulary -- a constant, not an N+1.
+    for (const status of ['in_progress', 'planned', 'on_hold', 'completed', 'abandoned']) {
+      expect(calls.some((call) => call.url.includes(`status=${status}`))).toBe(true)
+    }
+  })
+
+  it('keeps one library addressed by token alone', async () => {
+    // The listing is addressed by bearer token alone; no request this page
+    // makes names a user, so there is no parameter to point elsewhere.
+    const { fetchMock, calls } = mockApi([interaction()])
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await screen.findByText('Frankenstein')
+
+    const library = calls.filter((call) => call.url.includes('/api/v1/library'))
+    expect(library.length).toBeGreaterThan(0)
+    for (const call of library) {
+      expect(call.url).not.toMatch(/user_id|user=|account/)
+      expect(String(call.init?.body ?? '')).not.toMatch(/user_id/)
+      // Read from the entries rather than `.get`: this environment's
+      // `Headers` is case-sensitive on lookup, though the header is present.
+      const sent = call.init?.headers as Headers | undefined
+      expect(sent).toBeDefined()
+      const headers = Object.fromEntries([...(sent ?? new Headers())])
+      expect(headers.authorization).toBe('Bearer test-token-abc')
+    }
   })
 
   it('asks for active entries only, never removed ones', async () => {
@@ -530,7 +811,7 @@ describe('Library status organisation', () => {
     const user = userEvent.setup()
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
-    await signIn(user)
+    await authenticate(user)
 
     await screen.findByText('Frankenstein')
     const listings = calls.filter(

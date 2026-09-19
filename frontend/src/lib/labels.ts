@@ -35,6 +35,46 @@ export function statusLabel(status: string): string {
  * Derived entirely from `UserWorkState`, which the library already returns.
  * No second activity model, and no event feed.
  */
+/**
+ * The words a reader would use for consuming this medium.
+ *
+ * Phase 1AA. "Read" an anime is wrong and "watched" a novel is wrong, and
+ * the domain slug is the only thing that knows which -- the same split
+ * `activityLine` already makes, kept in one place so the counter, the
+ * button and the sentence cannot drift apart.
+ *
+ * Manga and manhwa are read, so only `anime` takes the other verb. The API
+ * and the stored count stay domain-neutral: `times_completed` counts
+ * completions, and this is purely how they are said.
+ */
+export interface ConsumptionWords {
+  /** "Read" / "Watched" -- what the reader did. */
+  past: string
+  /** "Read again" / "Watch again" -- the control. */
+  again: string
+  /** "time" / "times", with the count applied by `completionCount`. */
+  noun: string
+}
+
+export function consumptionWords(domainSlug: string): ConsumptionWords {
+  return domainSlug === 'anime'
+    ? { past: 'Watched', again: 'Watch again', noun: 'time' }
+    : { past: 'Read', again: 'Read again', noun: 'time' }
+}
+
+/**
+ * "Read 1 time" / "Watched 3 times".
+ *
+ * Says the count even when it is one: a reader who has finished something
+ * once and is deciding whether to record another needs to see what the
+ * number currently is, and hiding it until two would make the first
+ * increment look like it came from nowhere.
+ */
+export function completionCount(count: number, domainSlug: string): string {
+  const words = consumptionWords(domainSlug)
+  return `${words.past} ${count} ${words.noun}${count === 1 ? '' : 's'}`
+}
+
 export function activityLine(
   state: {
     status: string

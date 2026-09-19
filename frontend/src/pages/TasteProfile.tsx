@@ -2,26 +2,57 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import AppShell from '../components/AppShell'
 import type { ProductView } from '../components/AppShell'
-import SignInPanel from '../components/SignInPanel'
+import SignInPrompt from '../components/SignInPrompt'
+import StateMessage from '../components/StateMessage'
 import { fetchTasteDashboard } from '../api/dashboard'
 import { fetchPreferenceFeedback, submitPreferenceFeedback } from '../api/feedback'
-import { useSession } from '../hooks/useSession'
+import { fetchPreferenceOverview } from '../api/preferences'
+import { useSession } from '../auth/session'
+import { statusLabel } from '../lib/labels'
 import type {
   ConfidenceBand,
+  ContributingWork,
+  EvidenceCounts,
+  ExposureSignal,
   PreferenceFeedbackValue,
+  PreferenceSignal,
   TasteDashboard,
   TastePreferenceItem,
   TasteStandoutObservation,
 } from '../types/api'
 
 /**
- * Your Taste -- the first user-facing surface built on the preference engine.
+ * Your Taste -- the reader-facing surface built on the preference engine.
  *
- * Everything shown here is decided by the backend. The dashboard endpoint
- * returns groups, a confidence band, plain counts and a controlled
- * `presentation_key`; this file turns those into sentences and decides
- * nothing else. It does not classify, rank, threshold, combine or recompute
- * anything, and there is no arithmetic in it beyond pluralising a count.
+ * Everything shown here is decided by the backend. This file turns controlled
+ * keys, groups, bands and counts into sentences and decides nothing else. It
+ * does not classify, rank, threshold, combine or recompute anything, and
+ * there is no arithmetic in it beyond pluralising a count.
+ *
+ * ---
+ *
+ * Two sources, and which one is in charge
+ *
+ * `/preferences/dashboard` is **authoritative for membership**: it decides
+ * `profile_state`, which concepts are established, which group each one is
+ * in, and what stands out. `/preferences/overview` is **evidence only**: it
+ * explains why a concept the dashboard already placed is there.
+ *
+ *     dashboard  ->  where this concept belongs
+ *     overview   ->  why this established concept appears
+ *
+ * That relationship is never reversed. The overview carries lower-confidence
+ * signals the dashboard deliberately leaves unestablished, and promoting one
+ * of those into a group would be this page inventing a preference the engine
+ * declined to state. The join is by **exact concept slug** -- the dashboard's
+ * `features[].key` against the overview's `concept_slug` -- never by position
+ * in either list.
+ *
+ * Three requests, in parallel, and two of them are allowed to fail: without
+ * the overview the profile renders with its own summary evidence, and without
+ * the feedback list the profile renders with nothing answered yet. Only the
+ * dashboard failing takes the page down, because without it there is no
+ * profile to show.
  *
  * ---
  *
@@ -29,13 +60,13 @@ import type {
  *
  * Which group an item is in says *how much* the reader liked something.
  * `confidence_band` says how much evidence there is for saying so. Phase 1W
- * made them independent in the contract, and this page has to keep them
- * independent in the wording: a strong preference held with moderate
- * confidence is rendered as a clear liking, not hedged into a mild one.
+ * made them independent in the contract, and this page keeps them independent
+ * in the wording: a strong preference held with moderate confidence is
+ * rendered as a clear liking, not hedged into a mild one.
  *
  * So the group chooses the verb and the band only ever appears as supporting
- * detail. "You particularly enjoy X" never becomes "you might somewhat like
- * X" because the band is moderate.
+ * detail, inside the disclosure. "You particularly enjoy X" never becomes
+ * "you might somewhat like X" because the band is moderate.
  *
  * The mild group is the place this is easiest to get wrong, so the section
  * says out loud what it means: positive, just less pronounced. Not "Noema is
@@ -53,18 +84,19 @@ import type {
  *
  * Emerging signals are never rendered as preferences, however large their
  * numbers look: establishment is the backend's decision and this page does
- * not promote across it.
+ * not promote across it. Concepts met but never rated are further out still,
+ * and get their own band that says exposure is not approval.
  *
  * ---
  *
  * Feedback
  *
- * Every established item can be answered -- "Does this feel right?" -- from
- * inside its own details panel, never as a modal and never as a question the
- * reader has to dismiss to read their profile. The answer is stored on its
- * own channel; it is not a rating, it does not move the preference engine in
- * this phase, and the confirmation wording is careful to promise only what
- * is true.
+ * Every established individual item can be answered -- "Does this feel
+ * right?" -- from inside its own details panel, never as a modal and never as
+ * a question the reader has to dismiss to read their profile. The answer is
+ * stored on its own channel; it is not a rating, it does not move the
+ * preference engine in this phase, and the confirmation wording promises only
+ * what is true.
  */
 
 interface TasteProfileProps {
@@ -109,13 +141,8 @@ const SECTIONS: Record<Bucket, SectionCopy> = {
   },
 }
 
-/** A text marker beside each group, so nothing rests on colour alone. */
-const SECTION_MARKS: Record<Bucket, string> = {
-  strongly_likes: '++',
-  mildly_likes: '+',
-  dislikes: '−',
-  emerging: '…',
-}
+/** The order the groups are read in. The backend's semantics, not a ranking. */
+const BUCKET_ORDER: Bucket[] = ['strongly_likes', 'mildly_likes', 'dislikes', 'emerging']
 
 const CONFIDENCE_LABELS: Record<ConfidenceBand, string> = {
   low: 'Low confidence',
@@ -187,7 +214,11 @@ function plural(count: number, one: string, many: string): string {
  */
 function PreferenceName({ item }: { item: TastePreferenceItem }) {
   if (item.kind !== 'combination') {
-    return <span className="text-lg font-medium text-slate-100">{item.display_name}</span>
+    return (
+      <span className="font-display text-2xl font-light text-paper">
+        {item.display_name}
+      </span>
+    )
   }
 
   // Built as one flat list of children rather than nested wrappers, because
@@ -199,17 +230,14 @@ function PreferenceName({ item }: { item: TastePreferenceItem }) {
     if (index > 0) {
       parts.push(' ')
       parts.push(
-        <span key={`join-${feature.key}`} className="text-slate-500">
+        <span key={`join-${feature.key}`} className="text-accent">
           +
         </span>,
       )
       parts.push(' ')
     }
     parts.push(
-      <span
-        key={feature.key}
-        className="rounded bg-slate-800 px-2 py-0.5 text-lg font-medium text-slate-100"
-      >
+      <span key={feature.key} className="font-display text-2xl font-light text-paper">
         {feature.name}
       </span>,
     )
@@ -218,13 +246,13 @@ function PreferenceName({ item }: { item: TastePreferenceItem }) {
   parts.push(
     <span
       key="combination-badge"
-      className="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-slate-400"
+      className="text-[0.62rem] uppercase tracking-label text-paper-faint"
     >
       Combination
     </span>,
   )
 
-  return <span className="flex flex-wrap items-center gap-1.5">{parts}</span>
+  return <span className="flex flex-wrap items-baseline gap-x-2">{parts}</span>
 }
 
 /**
@@ -245,10 +273,77 @@ function EvidenceLine({ item }: { item: TastePreferenceItem }) {
   }
 
   return (
-    <p className="text-sm text-slate-400">
+    <p className="mt-3 text-[0.88rem] leading-relaxed text-paper-dim">
       Based on {parts.join(' ')}
       {evidence.includes_reconsumed_works && ', including work you came back to'}.
     </p>
+  )
+}
+
+/**
+ * The overview's counts, as short factual lines.
+ *
+ * Only fields with something to say are printed: a concept nobody abandoned
+ * does not get "0 abandoned", which reads as a finding rather than as the
+ * absence of one. Every number is the server's -- nothing here averages,
+ * rounds or totals anything.
+ */
+function evidenceFacts(evidence: EvidenceCounts): string[] {
+  const facts: string[] = []
+
+  if (evidence.works_rated > 0) {
+    const rated = [plural(evidence.works_rated, 'rated', 'rated')]
+    if (evidence.positive_ratings > 0) rated.push(`${evidence.positive_ratings} positive`)
+    if (evidence.negative_ratings > 0) rated.push(`${evidence.negative_ratings} negative`)
+    if (evidence.rating_mean !== null) rated.push(`average ${evidence.rating_mean}/10`)
+    facts.push(rated.join(' · '))
+  }
+  if (evidence.works_reconsumed > 0) {
+    facts.push(
+      `Returned to ${evidence.works_reconsumed} of them (${plural(
+        evidence.total_completions,
+        'completion',
+        'completions',
+      )} in total)`,
+    )
+  }
+  if (evidence.works_abandoned > 0) facts.push(`${evidence.works_abandoned} abandoned`)
+  if (evidence.works_on_hold > 0) facts.push(`${evidence.works_on_hold} on hold`)
+
+  return facts
+}
+
+/** One work behind a concept, as this reader left it. */
+function ContributingWorks({ works }: { works: ContributingWork[] }) {
+  if (works.length === 0) return null
+
+  return (
+    <div className="mt-5">
+      <p className="text-[0.62rem] uppercase tracking-label text-paper-faint">
+        Works behind this
+      </p>
+      <ul className="mt-3 divide-y divide-paper/10 border-t border-paper/10">
+        {works.map((work) => (
+          <li
+            key={work.work_id}
+            className="flex flex-wrap items-baseline justify-between gap-x-6 py-2.5"
+          >
+            <span className="text-[0.9rem] text-paper-dim">
+              {work.title}
+              {!work.in_library && (
+                // Removal is soft and the evidence survives it; saying so
+                // stops a title reading as something still on the shelf.
+                <span className="text-paper-faint"> · removed from your library</span>
+              )}
+            </span>
+            <span className="text-[0.62rem] uppercase tracking-label text-paper-faint">
+              {work.rating === null ? 'Not rated' : `${work.rating}/10`} ·{' '}
+              {statusLabel(work.status)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -285,7 +380,7 @@ function FeedbackControl({
   // attach an opinion to. Said plainly rather than shown as a dead control.
   if (item.kind === 'combination') {
     return (
-      <p className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">
+      <p className="mt-6 border-t border-paper/10 pt-5 text-[0.8rem] leading-relaxed text-paper-faint">
         Feedback on combinations is not available yet — you can answer about each
         theme on its own.
       </p>
@@ -296,12 +391,12 @@ function FeedbackControl({
   const slug = item.features[0]?.key ?? item.key
 
   return (
-    <div className="mt-3 border-t border-slate-800 pt-3">
-      <p className="text-xs font-medium text-slate-300" id={`feedback-${slug}`}>
+    <div className="mt-6 border-t border-paper/10 pt-5">
+      <p className="text-[0.62rem] uppercase tracking-label text-paper-faint" id={`feedback-${slug}`}>
         Does this feel right?
       </p>
       <div
-        className="mt-2 flex flex-wrap gap-2"
+        className="mt-3 flex flex-wrap gap-x-8 gap-y-3"
         role="group"
         aria-labelledby={`feedback-${slug}`}
       >
@@ -317,10 +412,10 @@ function FeedbackControl({
             disabled={state?.saving}
             aria-pressed={current === value}
             onClick={() => onAnswer(value)}
-            className={`rounded-lg border px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300 disabled:opacity-50 ${
+            className={`border-b pb-1 text-[0.85rem] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${
               current === value
-                ? 'border-slate-400 bg-slate-800 text-slate-100'
-                : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                ? 'border-accent text-paper'
+                : 'border-paper/20 text-paper-dim hover:border-accent hover:text-accent'
             }`}
           >
             {current === value && (
@@ -333,7 +428,7 @@ function FeedbackControl({
         ))}
       </div>
 
-      <p className="mt-2 text-xs text-slate-500" role="status">
+      <p className="mt-4 max-w-md text-[0.8rem] leading-relaxed text-paper-faint" role="status">
         {state?.error
           ? `That did not save (${state.error}).`
           : state?.saving
@@ -354,86 +449,161 @@ function FeedbackControl({
  * One preference, and everything a reader can check it against.
  *
  * The hierarchy is deliberate: the preference itself, what it rests on, then
- * -- only inside the disclosure -- confidence and the rest. Confidence is
- * real and is not hidden, but it is not what the page is about.
+ * -- only inside the disclosure -- confidence, the overview's counts, the
+ * works behind it, and the feedback question. Confidence is real and is not
+ * hidden, but it is not what the page is about.
  */
-function PreferenceCard({
+function Preference({
   item,
   bucket,
+  signal,
   feedback,
   onAnswer,
 }: {
   item: TastePreferenceItem
   bucket: Bucket
+  /** The overview signal for this concept, matched by slug. Often absent. */
+  signal: PreferenceSignal | undefined
   feedback: FeedbackState | undefined
   onAnswer: (value: PreferenceFeedbackValue) => void
 }) {
   const { evidence_summary: evidence } = item
   const establishedGroup = bucket !== 'emerging'
+  const facts = signal ? evidenceFacts(signal.evidence) : []
 
   return (
-    <article className="rounded-lg border border-slate-800 p-4">
+    <article className="py-8">
       <h3 className="flex flex-wrap items-center gap-2">
         <PreferenceName item={item} />
       </h3>
 
-      <div className="mt-2 space-y-1">
-        <EvidenceLine item={item} />
-        {evidence.has_mixed_evidence && (
-          <p className="text-xs text-slate-500">
-            Your ratings behind this do not all agree.
-          </p>
-        )}
-      </div>
+      <EvidenceLine item={item} />
+      {evidence.has_mixed_evidence && (
+        <p className="mt-2 text-[0.8rem] text-paper-faint">
+          Your ratings behind this do not all agree.
+        </p>
+      )}
 
-      <details className="mt-3 text-xs">
-        <summary className="cursor-pointer text-slate-400 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300">
+      <details className="mt-5">
+        <summary className="cursor-pointer text-[0.8rem] text-paper-dim transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           Why does Noema think this?
         </summary>
 
-        <div className="mt-2 space-y-1.5 border-l border-slate-800 pl-3 text-slate-400">
-          <p>{plural(evidence.rated_works, 'work you rated', 'works you rated')}.</p>
-          <p>
-            {plural(
-              evidence.supporting_works,
-              'work is associated with it',
-              'works are associated with it',
-            )}{' '}
-            in total, rated or not.
-          </p>
-          {evidence.domains.length > 0 && <p>Seen in {formatList(evidence.domains)}.</p>}
-          {evidence.includes_reconsumed_works && (
-            <p>Some of these are works you returned to. Repetition is context, not a rating.</p>
+        <div className="mt-5 border-l border-paper/10 pl-6 text-[0.85rem] leading-relaxed text-paper-dim">
+          <div className="space-y-2">
+            <p>{plural(evidence.rated_works, 'work you rated', 'works you rated')}.</p>
+            <p>
+              {plural(
+                evidence.supporting_works,
+                'work is associated with it',
+                'works are associated with it',
+              )}{' '}
+              in total, rated or not.
+            </p>
+            {evidence.domains.length > 0 && <p>Seen in {formatList(evidence.domains)}.</p>}
+            {/*
+              Only when the overview has no count of its own. "Some of these
+              are works you returned to" and "Returned to 1 of them" are the
+              same fact, and the one with a number in it is the better of the
+              two -- so the boolean is the fallback, not the headline.
+            */}
+            {evidence.includes_reconsumed_works && signal === undefined && (
+              <p>Some of these are works you returned to. Repetition is context, not a rating.</p>
+            )}
+          </div>
+
+          {/*
+            The richer counts, from `/preferences/overview`, matched to this
+            concept by slug. Absent whenever that request failed or the
+            concept has no signal of its own -- which is every combination,
+            since a pair has no single signal to match.
+          */}
+          {facts.length > 0 && (
+            <ul className="mt-5 space-y-1.5 text-paper-dim">
+              {facts.map((fact) => (
+                <li key={fact}>{fact}</li>
+              ))}
+            </ul>
           )}
-          <p className="text-slate-500">
+
+          {signal && <ContributingWorks works={signal.contributions} />}
+
+          <p className="mt-5 text-paper-faint">
             {CONFIDENCE_LABELS[item.confidence_band]} ·{' '}
             {CONFIDENCE_MEANINGS[item.confidence_band]} This is about how much
             evidence there is, not how much you liked it.
           </p>
           {item.also_supported_by.length > 0 && (
-            <p className="text-slate-500">
+            <p className="mt-2 text-paper-faint">
               The same ratings support {formatList(item.also_supported_by)} just as
               well, so Noema cannot tell these apart.
             </p>
           )}
-        </div>
 
-        {establishedGroup && (
-          <FeedbackControl item={item} state={feedback} onAnswer={onAnswer} />
-        )}
+          {establishedGroup && (
+            <FeedbackControl item={item} state={feedback} onAnswer={onAnswer} />
+          )}
+        </div>
       </details>
     </article>
+  )
+}
+
+/** A band: the group's name and meaning on the left, its concepts on the right. */
+function Band({
+  id,
+  eyebrow,
+  heading,
+  meaning,
+  children,
+  tone = 'ink',
+}: {
+  id: string
+  eyebrow: string
+  heading: string
+  meaning: string
+  children: ReactNode
+  tone?: 'ink' | 'surface'
+}) {
+  return (
+    <section
+      aria-labelledby={id}
+      className={`border-b border-paper/10 ${tone === 'surface' ? 'bg-surface' : ''}`}
+    >
+      <div className="mx-auto max-w-page px-5 py-16 sm:px-6 md:py-20 lg:px-10">
+        <div className="grid gap-10 lg:grid-cols-[19rem_minmax(0,1fr)] lg:gap-16">
+          <div className="lg:sticky lg:top-28 lg:self-start">
+            <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+              {eyebrow}
+            </p>
+            <h2
+              id={id}
+              className="mt-4 font-display text-3xl font-light leading-[1.1] text-paper md:text-[2.2rem]"
+            >
+              {heading}
+            </h2>
+            <p className="mt-5 max-w-sm text-[0.88rem] leading-relaxed text-paper-dim">
+              {meaning}
+            </p>
+          </div>
+
+          <div className="min-w-0">{children}</div>
+        </div>
+      </div>
+    </section>
   )
 }
 
 function Section({
   bucket,
   items,
+  signals,
   feedback,
   onAnswer,
 }: {
   bucket: Bucket
   items: TastePreferenceItem[]
+  signals: Map<string, PreferenceSignal>
   feedback: Record<string, FeedbackState>
   onAnswer: (item: TastePreferenceItem, value: PreferenceFeedbackValue) => void
 }) {
@@ -444,34 +614,32 @@ function Section({
 
   const copy = SECTIONS[bucket]
   return (
-    <section
-      aria-labelledby={`section-${bucket}`}
-      className={`space-y-3 ${bucket === 'emerging' ? 'opacity-90' : ''}`}
+    <Band
+      id={`section-${bucket}`}
+      eyebrow={bucket === 'emerging' ? 'Not yet a preference' : 'What your ratings show'}
+      heading={copy.heading}
+      meaning={copy.meaning}
     >
-      <div>
-        <h2
-          id={`section-${bucket}`}
-          className="flex items-baseline gap-2 text-base font-semibold text-slate-100"
-        >
-          <span aria-hidden="true" className="font-mono text-sm text-slate-500">
-            {SECTION_MARKS[bucket]}
-          </span>
-          {copy.heading}
-        </h2>
-        <p className="mt-1 text-sm text-slate-400">{copy.meaning}</p>
-      </div>
-      <div className="space-y-3">
+      <div className="divide-y divide-paper/10 border-t border-paper/10">
         {items.map((item) => (
-          <PreferenceCard
+          <Preference
             key={item.key}
             item={item}
             bucket={bucket}
+            // Matched by the concept's own slug. A combination has two
+            // features and no single signal, so it matches nothing and shows
+            // its dashboard evidence alone.
+            signal={
+              item.kind === 'combination'
+                ? undefined
+                : signals.get(item.features[0]?.key ?? item.key)
+            }
             feedback={feedback[item.features[0]?.key ?? item.key]}
             onAnswer={(value) => onAnswer(item, value)}
           />
         ))}
       </div>
-    </section>
+    </Band>
   )
 }
 
@@ -479,24 +647,24 @@ function WhatStandsOut({ observations }: { observations: TasteStandoutObservatio
   if (observations.length === 0) return null
 
   return (
-    <section aria-labelledby="section-standout" className="space-y-3">
-      <div>
-        <h2 id="section-standout" className="text-base font-semibold text-slate-100">
-          What stands out
-        </h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Things the lists above do not say on their own.
-        </p>
-      </div>
-      <ul className="space-y-2">
+    <Band
+      id="section-standout"
+      eyebrow="Across the groups"
+      heading="What stands out"
+      meaning="Things the lists above do not say on their own."
+      tone="surface"
+    >
+      <ul className="divide-y divide-paper/10 border-t border-paper/10">
         {observations.map((observation, index) => (
           <li
             key={`${observation.observation}-${observation.features.map((f) => f.key).join('+')}-${index}`}
-            className="rounded-lg border border-slate-800 bg-slate-900/40 p-4"
+            className="py-8"
           >
-            <p className="text-slate-200">{standoutSentence(observation)}</p>
+            <p className="font-display text-xl font-light leading-relaxed text-paper">
+              {standoutSentence(observation)}
+            </p>
             {observation.rated_works !== null && (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-3 text-[0.62rem] uppercase tracking-label text-paper-faint">
                 From {plural(observation.rated_works, 'rated work', 'rated works')}
                 {observation.confidence_band &&
                   ` · ${CONFIDENCE_LABELS[observation.confidence_band]}`}
@@ -505,57 +673,102 @@ function WhatStandsOut({ observations }: { observations: TasteStandoutObservatio
           </li>
         ))}
       </ul>
-    </section>
+    </Band>
+  )
+}
+
+/**
+ * Concepts this reader has met but never rated.
+ *
+ * Their own band, with their own heading, so engagement cannot be skim-read
+ * as approval. These are not preferences and are never placed among the
+ * groups above -- the dashboard did not establish them, and this page does
+ * not overrule it.
+ */
+function AwaitingRatings({ signals }: { signals: ExposureSignal[] }) {
+  if (signals.length === 0) return null
+
+  return (
+    <Band
+      id="section-awaiting"
+      eyebrow="Exposure, not approval"
+      heading="Met, but not yet rated"
+      meaning="These turn up in works you have engaged with, but you have not rated enough of them for Noema to call any of it a preference."
+    >
+      <ul className="divide-y divide-paper/10 border-t border-paper/10">
+        {signals.map((signal) => {
+          const facts = evidenceFacts(signal.evidence)
+          return (
+            <li key={signal.concept_slug} className="py-6">
+              <p className="font-display text-xl font-light text-paper">
+                {signal.concept_name}
+              </p>
+              <p className="mt-2 text-[0.85rem] text-paper-dim">
+                {plural(
+                  signal.evidence.works_exposed,
+                  'work you have met it in',
+                  'works you have met it in',
+                )}
+                {signal.evidence.works_completed > 0 &&
+                  `, ${signal.evidence.works_completed} completed`}
+                .
+              </p>
+              {facts.length > 0 && (
+                <p className="mt-2 text-[0.8rem] text-paper-faint">{facts.join(' · ')}</p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </Band>
   )
 }
 
 /** Before there is anything to describe: say what to do, not "no data". */
 function NoActivity({ onOpenLibrary }: { onOpenLibrary: () => void }) {
   return (
-    <section aria-labelledby="empty-heading" className="rounded-lg border border-slate-800 p-5">
-      <h2 id="empty-heading" className="text-base font-semibold text-slate-100">
-        Noema has not seen anything yet
-      </h2>
-      <p className="mt-2 text-sm leading-relaxed text-slate-400">
-        Add works you have read or watched to your library and rate them. Your taste
-        here is built from those ratings, so it starts the moment you give one.
-      </p>
+    <Band
+      id="empty-heading"
+      eyebrow="Nothing yet"
+      heading="Noema has not seen anything yet"
+      meaning="Add works you have read or watched to your library and rate them. Your taste here is built from those ratings, so it starts the moment you give one."
+    >
       <button
         type="button"
         onClick={onOpenLibrary}
-        className="mt-4 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+        className="border-b border-accent pb-1 text-[0.9rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         Go to your library
       </button>
-    </section>
+    </Band>
   )
 }
 
 /** Tracked plenty, rated nothing: exposure is not approval, and says so. */
 function NoRatings({ onOpenLibrary }: { onOpenLibrary: () => void }) {
   return (
-    <section aria-labelledby="empty-heading" className="rounded-lg border border-slate-800 p-5">
-      <h2 id="empty-heading" className="text-base font-semibold text-slate-100">
-        Noema knows what you have explored, but not what you thought of it
-      </h2>
-      <p className="mt-2 text-sm leading-relaxed text-slate-400">
-        Finishing something tells Noema you engaged with it, which is not the same as
-        enjoying it. Rating a few works is what separates the two.
-      </p>
+    <Band
+      id="empty-heading"
+      eyebrow="Explored, but unrated"
+      heading="Noema knows what you have explored, but not what you thought of it"
+      meaning="Finishing something tells Noema you engaged with it, which is not the same as enjoying it. Rating a few works is what separates the two."
+    >
       <button
         type="button"
         onClick={onOpenLibrary}
-        className="mt-4 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+        className="border-b border-accent pb-1 text-[0.9rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         Rate what is in your library
       </button>
-    </section>
+    </Band>
   )
 }
 
 export default function TasteProfile({ onNavigate, onOpenLibrary }: TasteProfileProps) {
   const session = useSession()
   const [dashboard, setDashboard] = useState<TasteDashboard | null>(null)
+  const [signals, setSignals] = useState<Map<string, PreferenceSignal>>(new Map())
+  const [awaiting, setAwaiting] = useState<ExposureSignal[]>([])
   const [feedback, setFeedback] = useState<Record<string, FeedbackState>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -563,14 +776,20 @@ export default function TasteProfile({ onNavigate, onOpenLibrary }: TasteProfile
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      // The profile and the answers to it are two requests because they are
-      // two ideas. A failure to load previous answers must not hide the
-      // profile, so they are settled independently.
-      const [profile, answers] = await Promise.all([
+      // Three requests because they are three ideas. Only the dashboard is
+      // allowed to take the page down: without the evidence or the previous
+      // answers the profile is poorer, not wrong.
+      const [profile, answers, overview] = await Promise.all([
         fetchTasteDashboard(),
         fetchPreferenceFeedback().catch(() => ({ items: [] })),
+        fetchPreferenceOverview().catch(() => null),
       ])
+
       setDashboard(profile)
+      setSignals(
+        new Map((overview?.signals ?? []).map((signal) => [signal.concept_slug, signal])),
+      )
+      setAwaiting(overview?.awaiting_ratings ?? [])
       setFeedback(
         Object.fromEntries(
           answers.items.map((item) => [
@@ -628,113 +847,110 @@ export default function TasteProfile({ onNavigate, onOpenLibrary }: TasteProfile
   return (
     <AppShell
       title="Your Taste"
-      subtitle="What Noema has noticed in the works you have rated"
       current="taste"
       onNavigate={onNavigate}
-      actions={
-        session.account ? (
-          <p className="hidden text-xs text-slate-500 sm:block">{session.account}</p>
-        ) : null
+      bleed
+      masthead={
+        <div className="border-b border-paper/10">
+          <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
+            <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+              Your taste
+            </p>
+            <h1 className="mt-5 font-display text-[2.6rem] font-light leading-[1.05] tracking-tight text-paper sm:text-5xl lg:text-[3.6rem]">
+              Your Taste
+            </h1>
+            <p className="mt-6 max-w-2xl font-display text-lg font-light leading-relaxed text-paper-dim md:text-xl">
+              This describes what you tend to enjoy across the works you have rated and
+              engaged with — not who you are.
+            </p>
+            {summary && summary.rated_works > 0 && (
+              <p className="mt-8 text-[0.66rem] uppercase tracking-label text-paper-faint">
+                Built from {plural(summary.rated_works, 'rated work', 'rated works')}
+              </p>
+            )}
+          </div>
+        </div>
       }
     >
-      <div className="mx-auto max-w-3xl space-y-8">
-        {(session.error || error) && (
-          <p
-            role="alert"
-            className="rounded-lg border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300"
-          >
-            {session.error ?? error}
-          </p>
-        )}
+      {(session.error || error) && (
+        <div className="mx-auto max-w-page px-5 py-12 sm:px-6 lg:px-10">
+          <StateMessage
+            kind="error"
+            title="Noema could not read your taste profile."
+            detail={session.error ?? error ?? ''}
+          />
+        </div>
+      )}
 
-        {session.loading ? (
-          <p className="text-sm text-slate-400">Checking your session&hellip;</p>
-        ) : !session.account ? (
-          <SignInPanel busy={session.busy} onSignIn={session.signIn} onRegister={session.signUp} />
-        ) : (
-          <>
-            <p className="text-sm leading-relaxed text-slate-400">
-              Noema learns this from the works you add, finish and rate. It describes{' '}
-              <span className="text-slate-200">what you enjoy reading and watching</span> —
-              not who you are.
-            </p>
+      {session.loading ? (
+        <div className="mx-auto max-w-page px-5 py-12 sm:px-6 lg:px-10">
+          <StateMessage kind="loading" title="Checking your session…" />
+        </div>
+      ) : !session.account ? (
+        <div className="mx-auto max-w-page px-5 py-16 sm:px-6 lg:px-10">
+          <SignInPrompt
+            detail="Your taste profile is read from your own ratings, so it needs an account to exist at all."
+            onLogin={() => onNavigate('login')}
+            onRegister={() => onNavigate('register')}
+          />
+        </div>
+      ) : (
+        <>
+          {loading && !dashboard && (
+            <div className="mx-auto max-w-page px-5 py-12 sm:px-6 lg:px-10">
+              <StateMessage kind="loading" title="Reading your ratings…" />
+            </div>
+          )}
 
-            {loading && !dashboard && (
-              <p className="text-sm text-slate-400">Reading your ratings&hellip;</p>
-            )}
+          {state === 'no_activity' && <NoActivity onOpenLibrary={onOpenLibrary} />}
+          {state === 'no_ratings' && <NoRatings onOpenLibrary={onOpenLibrary} />}
 
-            {state === 'no_activity' && <NoActivity onOpenLibrary={onOpenLibrary} />}
-            {state === 'no_ratings' && <NoRatings onOpenLibrary={onOpenLibrary} />}
-
-            {summary && state === 'building' && (
-              <p className="rounded-lg border border-slate-800 px-3 py-2 text-sm text-slate-400">
+          {summary && state === 'building' && (
+            <div className="mx-auto max-w-page px-5 py-12 sm:px-6 lg:px-10">
+              <p className="max-w-2xl font-display text-xl font-light leading-relaxed text-paper-dim">
                 You have rated {plural(summary.rated_works, 'work', 'works')}. Nothing has
                 settled into a preference yet — a few more ratings and patterns start to
                 show.
               </p>
-            )}
-
-            {dashboard && (
-              <>
-                <Section
-                  bucket="strongly_likes"
-                  items={dashboard.strongly_likes}
-                  feedback={feedback}
-                  onAnswer={answer}
-                />
-                <Section
-                  bucket="mildly_likes"
-                  items={dashboard.mildly_likes}
-                  feedback={feedback}
-                  onAnswer={answer}
-                />
-                <Section
-                  bucket="dislikes"
-                  items={dashboard.dislikes}
-                  feedback={feedback}
-                  onAnswer={answer}
-                />
-                <Section
-                  bucket="emerging"
-                  items={dashboard.emerging}
-                  feedback={feedback}
-                  onAnswer={answer}
-                />
-                <WhatStandsOut observations={dashboard.what_stands_out} />
-              </>
-            )}
-
-            {summary && summary.rated_works > 0 && (
-              <p className="border-t border-slate-800 pt-4 text-xs leading-relaxed text-slate-500">
-                Built from {plural(summary.rated_works, 'rated work', 'rated works')}. This
-                is recalculated every time you open it, so rating something new changes it
-                straight away. It is a description of media taste, not an assessment of
-                you.
-              </p>
-            )}
-
-            <div className="flex items-center gap-3">
-              <p className="text-xs text-slate-500">
-                Signed in as <span className="text-slate-300">{session.account}</span>
-              </p>
-              <button
-                type="button"
-                onClick={() =>
-                  void session.signOut().then(() => {
-                    // Cleared on the action rather than in an effect, so a
-                    // stale profile cannot flash before the effect reruns.
-                    setDashboard(null)
-                    setFeedback({})
-                  })
-                }
-                className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
-              >
-                Log out
-              </button>
             </div>
-          </>
-        )}
-      </div>
+          )}
+
+          {dashboard && (
+            <>
+              {BUCKET_ORDER.map((bucket) => (
+                <Section
+                  key={bucket}
+                  bucket={bucket}
+                  items={dashboard[bucket]}
+                  signals={signals}
+                  feedback={feedback}
+                  onAnswer={answer}
+                />
+              ))}
+              <WhatStandsOut observations={dashboard.what_stands_out} />
+              <AwaitingRatings signals={awaiting} />
+            </>
+          )}
+
+          {summary && summary.rated_works > 0 && (
+            <section className="mx-auto max-w-page px-5 py-14 sm:px-6 lg:px-10">
+              {/*
+                The count is already in the masthead; repeating it here would
+                be the same fact twice. What this note adds is where the
+                reading comes from and how long it lasts.
+              */}
+              <p className="max-w-2xl text-[0.85rem] leading-relaxed text-paper-faint">
+                Noema reads this from what you add, finish, return to and rate — your
+                ratings are what separate enjoying something from merely getting
+                through it. It is recalculated every time you open it, so rating
+                something new changes it straight away, and it will keep changing as
+                your library does. It is a description of media taste, not an
+                assessment of you.
+              </p>
+            </section>
+          )}
+        </>
+      )}
     </AppShell>
   )
 }

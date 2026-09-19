@@ -1,1 +1,172 @@
-@import "tailwindcss";
+/* Font imports must precede the Tailwind import. */
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..600;1,6..72,200..600&family=Inter:wght@300;400;500;600&display=swap');
+@import 'tailwindcss';
+
+/**
+ * The Noema visual system.
+ *
+ * Four colours, and everything else derived from them by mixing. Nothing here
+ * is pure black or pure white: the page sits on a deep warm green and rises to
+ * parchment, which is what keeps the light band feeling like the same
+ * publication rather than a different website.
+ *
+ *     ink       #2C3930   primary dark background
+ *     surface   #3F4F44   raised and secondary dark surfaces, and secondary
+ *                         text on the light band
+ *     paper     #DCD7C9   the warm light surface, and primary text on dark
+ *     accent    #A27B5C   active navigation, links, small editorial marks
+ *
+ * The four tones between them -- `paper-dim`, `paper-faint`, `ink-soft`,
+ * `ink-faint` -- are mixes of those four and introduce no new hue. They exist
+ * so secondary and tertiary text has somewhere to go without reaching for grey.
+ *
+ * `accent` is deliberately scarce. It marks the current nav item, underlines a
+ * primary action and heads a plate; beyond that it should be possible to scan
+ * a whole section without seeing it.
+ *
+ * Names are semantic on purpose. A surface that says `bg-slate-950` has no
+ * opinion; one that says `bg-ink` does.
+ */
+@theme {
+  --color-ink: #2c3930;
+  /* ink lifted a third of the way to surface: plate fields, quiet depth. */
+  --color-ink-soft: #35423a;
+  --color-surface: #3f4f44;
+
+  --color-paper: #dcd7c9;
+  /* paper carried toward ink, for secondary and tertiary text on dark. */
+  --color-paper-dim: #b0afa3;
+  --color-paper-faint: #878b80;
+  /* surface carried toward paper, for tertiary text on the light band. */
+  --color-ink-faint: #6e7a70;
+
+  --color-accent: #a27b5c;
+
+  /* Two faces, two jobs: the serif states things, the sans labels them. */
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* The letterspacing that replaces every badge and pill. */
+  --tracking-label: 0.18em;
+
+  --container-page: 84rem;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-ink);
+}
+
+/**
+ * Editorial atmosphere, in CSS only.
+ *
+ * The prototype's hero was a photograph behind a scrim. No artwork exists for
+ * any work Noema holds, and inventing some is the thing the product refuses --
+ * but the composition never needed the image to *depict* anything. It needed
+ * depth and warmth behind the type.
+ *
+ * So this is decorative page furniture: lamplight in `accent`, a cooler pool
+ * in `surface`, a vignette and a grain. It depicts nothing and is attached to
+ * no work, so there is nothing in it to mistake for a cover.
+ */
+.atmosphere {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--color-ink);
+  background-image:
+    /* The principal light, off-centre and high right -- where the prototype's
+       photograph carried its brightest area. */
+    radial-gradient(64% 86% at 78% 12%, rgb(162 123 92 / 0.26) 0%, rgb(162 123 92 / 0) 58%),
+    /* A cooler pool low and right, so the field has two temperatures. */
+    radial-gradient(52% 64% at 92% 72%, rgb(63 79 68 / 0.8) 0%, rgb(63 79 68 / 0) 62%),
+    /* A broad haze filling the right half -- the space the scrim fades toward.
+       Without it the band ends flat. */
+    radial-gradient(90% 120% at 100% 45%, rgb(162 123 92 / 0.11) 0%, rgb(162 123 92 / 0) 70%),
+    /* Depth at the lower left, so the type column sits on something. */
+    radial-gradient(70% 90% at 8% 100%, rgb(63 79 68 / 0.55) 0%, rgb(63 79 68 / 0) 68%),
+    linear-gradient(172deg, rgb(63 79 68 / 0.45) 0%, rgb(44 57 48 / 1) 72%);
+}
+
+/* Vignette: pulls the eye back to the type column. */
+.atmosphere::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    125% 95% at 46% 50%,
+    rgb(44 57 48 / 0) 34%,
+    rgb(44 57 48 / 0.58) 100%
+  );
+}
+
+/**
+ * Grain. An SVG turbulence tile, not an image file -- no asset, no request, no
+ * external dependency. Enough to give the wash a surface; far short of
+ * anything that reads as a picture.
+ */
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/**
+ * Legibility scrims. They sit between the atmosphere and the text column so
+ * the type keeps its contrast at every width.
+ */
+.scrim-left {
+  background: linear-gradient(
+    90deg,
+    rgb(44 57 48 / 0.96) 0%,
+    rgb(44 57 48 / 0.7) 38%,
+    rgb(44 57 48 / 0.08) 78%,
+    rgb(44 57 48 / 0) 100%
+  );
+}
+.scrim-bottom {
+  background: linear-gradient(
+    0deg,
+    rgb(44 57 48 / 0.92) 0%,
+    rgb(44 57 48 / 0.35) 45%,
+    rgb(44 57 48 / 0) 100%
+  );
+}
+
+/* Horizontal shelves scroll on narrow screens without a visible scrollbar;
+   the overflow itself stays, so keyboard and trackpad still reach it. */
+.rail {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

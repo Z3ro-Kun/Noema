@@ -63,6 +63,44 @@ def _format_date(date: dict | None) -> str | None:
     return f"{parts[0]:04d}-{parts[1]:02d}-{parts[2]:02d}"
 
 
+# AniList serves three sizes of the same artwork. Largest first: the product
+# renders covers into a 2:3 slot that is bigger than `medium` on any modern
+# display, and the smaller variants visibly soften there.
+_COVER_PREFERENCE = ("extraLarge", "large", "medium")
+
+
+def cover_image(media: dict) -> tuple[str | None, dict | None]:
+    """The work's cover artwork URL, and where it came from.
+
+    Phase 1AA. Returns `(url, provenance)` -- both `None` when AniList has
+    no artwork for this entry, which is an ordinary answer and not an error.
+    Nothing here constructs a URL: the value is whatever `Media.coverImage`
+    contained, so a work AniList has no cover for stays uncovered rather
+    than being pointed at a guessed CDN path.
+
+    The provenance says which field was taken, so "where did this cover come
+    from?" is answerable from the stored record alone.
+    """
+    cover = media.get("coverImage") or {}
+    available = [
+        size for size in _COVER_PREFERENCE
+        if isinstance(cover.get(size), str) and cover[size].strip()
+    ]
+    if not available:
+        return None, None
+
+    chosen = available[0]
+    return cover[chosen].strip(), {
+        "source_field": f"Media.coverImage.{chosen}",
+        "variants_available": available,
+        "license_note": (
+            "Cover artwork hotlinked from AniList's CDN as supplied by the "
+            "AniList API. Not copied into Noema; rights remain with the "
+            "original rights holders."
+        ),
+    }
+
+
 def _episode_titles(streaming_episodes: list[dict]) -> dict[int, dict]:
     """Map episode number -> streaming entry, for entries we can number."""
     titles: dict[int, dict] = {}
@@ -94,9 +132,17 @@ class AniListAnimeAdapter:
             raise ValueError("AniList payload has no id; cannot build a stable source_ref")
 
         titles = media.get("title") or {}
-        # Prefer romaji as the canonical title (always present in practice),
-        # falling back rather than assuming any one variant exists.
-        title = titles.get("romaji") or titles.get("english") or titles.get("native")
+        # AniList gives three titles and they are not interchangeable.
+        # English first: it is the name a reader of this product is most
+        # likely to recognise, and preferring romaji meant a Korean webtoon
+        # arrived as "Na Honjaman Level Up" when AniList had "Solo Leveling"
+        # on file the whole time. Romaji is the fallback because it is always
+        # present in practice; native is the last resort.
+        #
+        # This is presentation only. The native title is kept verbatim as
+        # `original_title`, all three stay in `extra_metadata.anilist.titles`,
+        # and `source_ref` -- not the title -- is what identifies the work.
+        title = titles.get("english") or titles.get("romaji") or titles.get("native")
         if not title:
             raise ValueError(f"AniList media {anilist_id} has no usable title")
 
@@ -242,8 +288,13 @@ class AniListAnimeAdapter:
     def _build_metadata(self) -> dict:
         media = self.media
         titles = media.get("title") or {}
+        cover_url, cover_provenance = cover_image(media)
 
         return {
+            # Read by `product_service.work_cover_image_url`. Absent rather
+            # than null when AniList supplied no artwork, so "never had one"
+            # and "had one and lost it" stay distinguishable in the record.
+            **({"cover_image_url": cover_url} if cover_url else {}),
             "provenance": {
                 "adapter": ADAPTER_NAME,
                 "adapter_version": ADAPTER_VERSION,
@@ -255,6 +306,7 @@ class AniListAnimeAdapter:
                     "Metadata from AniList (CC BY-SA per AniList terms). "
                     "No episode text, subtitles, or media are retrieved."
                 ),
+                **({"cover_image": cover_provenance} if cover_provenance else {}),
             },
             "structure": {
                 "containers": len(self._build_episodes()),

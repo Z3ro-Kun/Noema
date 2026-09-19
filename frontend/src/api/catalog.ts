@@ -1,5 +1,4 @@
-import { apiGet } from './client'
-import { authenticatedRequest } from './library'
+import { apiGet, authenticatedRequest } from './client'
 import type {
   Container,
   ContentUnit,

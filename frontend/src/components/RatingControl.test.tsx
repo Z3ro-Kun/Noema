@@ -107,6 +107,9 @@ describe('StatusControl', () => {
         onAdd={() => {}}
         onStatus={() => {}}
         onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
       />,
     )
 
@@ -122,6 +125,9 @@ describe('StatusControl', () => {
         onAdd={() => {}}
         onStatus={() => {}}
         onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
       />,
     )
 
@@ -132,7 +138,6 @@ describe('StatusControl', () => {
     ['planned', 'Start reading', 'in_progress'],
     ['in_progress', 'Mark completed', 'completed'],
     ['on_hold', 'Pick it back up', 'in_progress'],
-    ['completed', 'Read it again', 'in_progress'],
     ['abandoned', 'Give it another go', 'in_progress'],
   ])('makes the next step obvious from %s', async (status, label, sends) => {
     const user = userEvent.setup()
@@ -144,6 +149,9 @@ describe('StatusControl', () => {
         onAdd={() => {}}
         onStatus={onStatus}
         onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
       />,
     )
 
@@ -159,6 +167,9 @@ describe('StatusControl', () => {
         onAdd={() => {}}
         onStatus={() => {}}
         onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
       />,
     )
 
@@ -178,6 +189,9 @@ describe('StatusControl', () => {
         onAdd={() => {}}
         onStatus={onStatus}
         onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
       />,
     )
 
@@ -189,6 +203,110 @@ describe('StatusControl', () => {
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 
+  it('states the count on a completed work and offers one explicit control', async () => {
+    const user = userEvent.setup()
+    const onReconsume = vi.fn()
+    const onStatus = vi.fn()
+    render(
+      <StatusControl
+        title="Frankenstein"
+        state={userState({ status: 'completed', times_completed: 2 })}
+        onAdd={() => {}}
+        onStatus={onStatus}
+        onRemove={() => {}}
+        onReconsume={onReconsume}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
+      />,
+    )
+
+    expect(screen.getByText('Read 2 times')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Read again' }))
+
+    expect(onReconsume).toHaveBeenCalledTimes(1)
+    // It is not a status move, so nothing is sent through `onStatus`.
+    expect(onStatus).not.toHaveBeenCalled()
+  })
+
+  it('no longer nudges a completed work back into progress', () => {
+    render(
+      <StatusControl
+        title="Frankenstein"
+        state={userState({ status: 'completed', times_completed: 1 })}
+        onAdd={() => {}}
+        onStatus={() => {}}
+        onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
+      />,
+    )
+
+    // The old primary action, and the question it implied, are both gone.
+    expect(screen.queryByRole('button', { name: 'Read it again' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/\?/)).not.toBeInTheDocument()
+  })
+
+  it('uses the verb the medium takes', () => {
+    render(
+      <StatusControl
+        title="Cowboy Bebop"
+        state={userState({ status: 'completed', times_completed: 4 })}
+        onAdd={() => {}}
+        onStatus={() => {}}
+        onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="anime"
+      />,
+    )
+
+    expect(screen.getByText('Watched 4 times')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Watch again' })).toBeInTheDocument()
+  })
+
+  it('offers no completion control before anything has been completed', () => {
+    for (const status of ['planned', 'in_progress', 'on_hold', 'abandoned'] as const) {
+      const { unmount } = render(
+        <StatusControl
+          title="Frankenstein"
+          state={userState({ status, times_completed: 0 })}
+          onAdd={() => {}}
+          onStatus={() => {}}
+          onRemove={() => {}}
+          onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+          domainSlug="literature"
+        />,
+      )
+      expect(screen.queryByRole('button', { name: 'Read again' })).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('cannot be pressed twice while a recording is in flight', async () => {
+    const user = userEvent.setup()
+    const onReconsume = vi.fn()
+    render(
+      <StatusControl
+        title="Frankenstein"
+        state={userState({ status: 'completed', times_completed: 1 })}
+        busy
+        onAdd={() => {}}
+        onStatus={() => {}}
+        onRemove={() => {}}
+        onReconsume={onReconsume}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: 'Read again' })
+    expect(button).toBeDisabled()
+    await user.click(button)
+    expect(onReconsume).not.toHaveBeenCalled()
+  })
+
   it('names its controls for the work they belong to', () => {
     render(
       <StatusControl
@@ -197,6 +315,9 @@ describe('StatusControl', () => {
         onAdd={() => {}}
         onStatus={() => {}}
         onRemove={() => {}}
+        onReconsume={() => {}}
+        onUndoReconsume={() => {}}
+        domainSlug="literature"
       />,
     )
 

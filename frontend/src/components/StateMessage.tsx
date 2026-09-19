@@ -3,13 +3,15 @@ import type { ReactNode } from 'react'
 /**
  * Loading, empty and failure, said in words.
  *
- * Phase 1Y. Every network-backed surface has these three states and each one
- * used to be spelled slightly differently per page. A shared block keeps the
- * wording and the markup consistent, and -- more importantly -- makes the
- * blank screen impossible: a page either has content or says why it does not.
+ * Phase 1Y introduced it so no surface could show a blank screen; this pass
+ * restyled it into the editorial direction. The change is that an empty state
+ * is no longer a bordered box: it is a rule and a sentence, set in the same
+ * type as the section it sits in. "Nothing on hold yet" reads better as a
+ * line of prose than as an alert.
  *
- * A failure is announced with `role="alert"`, because someone who cannot see
- * the screen still needs to know the request did not work.
+ * A failure keeps `role="alert"` and the one place colour is still used
+ * structurally -- but the word "could not" carries it too, so the meaning
+ * survives without the colour.
  */
 
 interface StateMessageProps {
@@ -21,24 +23,34 @@ interface StateMessageProps {
   action?: ReactNode
 }
 
-const TONE = {
-  loading: 'border-slate-800 text-slate-400',
-  empty: 'border-slate-800 text-slate-400',
-  error: 'border-red-900 bg-red-950/40 text-red-300',
-} as const
-
 export default function StateMessage({ kind, title, detail, action }: StateMessageProps) {
+  const error = kind === 'error'
+
   return (
     <div
-      role={kind === 'error' ? 'alert' : undefined}
+      role={error ? 'alert' : undefined}
       // Loading is announced politely: a screen reader should hear that
       // something is happening without being interrupted mid-sentence.
       aria-live={kind === 'loading' ? 'polite' : undefined}
-      className={`rounded-lg border px-4 py-5 ${TONE[kind]}`}
+      className={
+        error
+          ? 'border-l-2 border-accent bg-accent/10 py-4 pl-5 pr-4'
+          : 'border-t border-paper/10 py-6'
+      }
     >
-      <p className="text-sm font-medium">{title}</p>
-      {detail && <p className="mt-1 text-sm opacity-90">{detail}</p>}
-      {action && <div className="mt-3">{action}</div>}
+      <p
+        className={`font-display text-lg font-light leading-snug ${
+          error ? 'text-paper' : 'text-paper-dim'
+        }`}
+      >
+        {title}
+      </p>
+      {detail && (
+        <p className="mt-2 max-w-xl text-[0.85rem] leading-relaxed text-paper-faint">
+          {detail}
+        </p>
+      )}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   )
 }

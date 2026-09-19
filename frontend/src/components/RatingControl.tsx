@@ -51,12 +51,17 @@ export default function RatingControl({
 
   return (
     <fieldset disabled={busy} className="min-w-0">
-      <legend className="text-[11px] uppercase tracking-wide text-slate-500">
+      {/*
+        "Your rating", said in as many words. Noema has no global score, no
+        average and no review count, and an unqualified number beside a work
+        is exactly how a reader would assume otherwise.
+      */}
+      <legend className="text-[0.66rem] uppercase tracking-label text-paper-faint">
         Your rating
       </legend>
 
       <div
-        className="mt-1.5 flex flex-wrap gap-1"
+        className="mt-5 flex flex-wrap gap-2"
         role="radiogroup"
         aria-label={`Your rating for ${title}`}
       >
@@ -65,10 +70,10 @@ export default function RatingControl({
           return (
             <label
               key={value}
-              className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border text-xs focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-slate-300 ${
+              className={`flex h-10 w-10 cursor-pointer items-center justify-center border text-[0.9rem] transition-colors duration-200 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent ${
                 selected
-                  ? 'border-slate-300 bg-slate-100 font-semibold text-slate-900'
-                  : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                  ? 'border-accent bg-accent text-ink'
+                  : 'border-paper/20 text-paper-dim hover:border-accent hover:text-paper'
               }`}
             >
               <input
@@ -87,10 +92,10 @@ export default function RatingControl({
         })}
 
         <label
-          className={`flex h-8 cursor-pointer items-center justify-center rounded border px-2 text-xs focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-slate-300 ${
+          className={`flex h-10 cursor-pointer items-center justify-center border px-3 text-[0.8rem] transition-colors duration-200 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent ${
             rating === null
-              ? 'border-slate-300 bg-slate-800 font-medium text-slate-100'
-              : 'border-slate-700 text-slate-400 hover:border-slate-500'
+              ? 'border-paper/40 text-paper'
+              : 'border-paper/20 text-paper-faint hover:border-accent hover:text-paper'
           }`}
         >
           <input
@@ -105,7 +110,7 @@ export default function RatingControl({
         </label>
       </div>
 
-      <p className="mt-1.5 text-xs text-slate-500">
+      <p className="mt-5 max-w-sm text-[0.85rem] leading-relaxed text-paper-faint">
         {rating === null
           ? 'Unrated. Rating is what tells Noema whether you enjoyed something.'
           : `You rated this ${rating} out of 10.`}

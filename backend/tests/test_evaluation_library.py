@@ -7,6 +7,13 @@ engine is eventually written, the cases it is judged against are real.
 
 Everything runs inside a rolled-back transaction. Nothing reaches the
 development corpus.
+
+That rollback isolates what these tests **write**, not what they **read**.
+A query here still sees every committed row in the development database, so
+assertions about the dataset are scoped to the reserved e-mail domain rather
+than counted over a whole table. Two of them once counted whole tables and
+passed only because no real account had ever been created; the first real
+sign-up broke them while the builder and its teardown were working perfectly.
 """
 
 import pytest
@@ -331,29 +338,101 @@ async def test_the_dataset_creates_no_canonical_content(
         assert await db_session.get(Work, work_id) is not None
 
 
+EVALUATION_LIKE = f"%{EVALUATION_EMAIL_DOMAIN}"
+
+
+async def _dataset_counts(
+    session: AsyncSession, *, inside: bool
+) -> dict[str, int]:
+    """Users, interactions and events, inside or outside the dataset.
+
+    `inside=False` is everything the dataset did not create -- which on a
+    development database means real accounts. Teardown must leave those
+    exactly as it found them, and that is what the whole-table counts these
+    tests used to make could never say.
+    """
+    users = (
+        select(User.id)
+        .where(
+            User.email.like(EVALUATION_LIKE)
+            if inside
+            else ~User.email.like(EVALUATION_LIKE)
+        )
+        .scalar_subquery()
+    )
+    interactions = (
+        select(UserContentInteraction.id)
+        .where(UserContentInteraction.user_id.in_(users))
+        .scalar_subquery()
+    )
+
+    async def count(model, where) -> int:
+        return (
+            await session.execute(select(func.count()).select_from(model).where(where))
+        ).scalar_one()
+
+    return {
+        "users": await count(User, User.id.in_(users)),
+        "interactions": await count(
+            UserContentInteraction, UserContentInteraction.id.in_(interactions)
+        ),
+        "events": await count(
+            UserContentEvent, UserContentEvent.interaction_id.in_(interactions)
+        ),
+    }
+
+
 async def test_evaluation_users_are_confined_to_the_reserved_domain(
     db_session: AsyncSession, evaluation
 ) -> None:
-    emails = (
-        (await db_session.execute(select(User.email))).scalars().all()
+    """The builder creates exactly the documented users, and no other address.
+
+    Scoped to the reserved domain: the point is that the builder reaches for
+    nothing outside it, not that the database contains nothing else. A
+    development database with a real account in it is an ordinary situation.
+    """
+    built = sorted(entry.spec.email for entry in evaluation.values())
+    assert built
+    assert all(email.endswith(EVALUATION_EMAIL_DOMAIN) for email in built)
+
+    stored = (
+        (
+            await db_session.execute(
+                select(User.email).where(User.email.like(EVALUATION_LIKE))
+            )
+        )
+        .scalars()
+        .all()
     )
-    assert emails
-    assert all(email.endswith(EVALUATION_EMAIL_DOMAIN) for email in emails)
+    # Exactly the documented cases: no duplicate, no stray, no omission.
+    assert sorted(stored) == built
 
 
 async def test_teardown_removes_everything_it_created(
     db_session: AsyncSession, evaluation
 ) -> None:
+    """Everything the dataset made goes, and nothing else is touched."""
     before_works = (
         await db_session.execute(select(func.count()).select_from(Work))
     ).scalar_one()
+    outsiders_before = await _dataset_counts(db_session, inside=False)
+    assert (await _dataset_counts(db_session, inside=True))["users"] == len(
+        EVALUATION_USERS
+    )
 
     removed = await teardown_evaluation_library(db_session)
 
     assert removed == len(EVALUATION_USERS)
-    for model in (User, UserContentInteraction, UserContentEvent):
-        count = await db_session.execute(select(func.count()).select_from(model))
-        assert count.scalar_one() == 0
+    # The dataset is gone, down to its events.
+    assert await _dataset_counts(db_session, inside=True) == {
+        "users": 0,
+        "interactions": 0,
+        "events": 0,
+    }
+    # And teardown reached only what the dataset made: whatever else the
+    # database held is still there, with its library and history intact.
+    assert await _dataset_counts(db_session, inside=False) == outsiders_before
+
     after_works = (
         await db_session.execute(select(func.count()).select_from(Work))
     ).scalar_one()

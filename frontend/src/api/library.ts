@@ -1,5 +1,4 @@
-import { API_BASE_URL } from '../lib/config'
-import { ApiError } from './client'
+import { authenticatedRequest, setSessionToken } from './client'
 import type {
   LibraryHistory,
   LibraryPage,
@@ -9,53 +8,6 @@ import type {
   SessionRead,
   WorkPresentation,
 } from '../types/api'
-
-/**
- * The session token for this dev interface.
- *
- * Held in memory only, deliberately: persisting a bearer token to
- * localStorage is a real decision with real risk, and this is a debugging
- * interface, not the product's eventual auth story. A refresh logs you out.
- */
-let sessionToken: string | null = null
-
-export function setSessionToken(token: string | null): void {
-  sessionToken = token
-}
-
-export function getSessionToken(): string | null {
-  return sessionToken
-}
-
-/**
- * A fetch carrying the current session token.
- *
- * Exported so other authenticated clients reuse one token and one error
- * shape instead of each keeping their own.
- */
-export async function authenticatedRequest<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
-  if (sessionToken) {
-    headers.set('Authorization', `Bearer ${sessionToken}`)
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
-  if (!response.ok) {
-    let detail = `${init.method ?? 'GET'} ${path} failed with ${response.status}`
-    try {
-      const body = (await response.json()) as { detail?: string }
-      if (body.detail) detail = body.detail
-    } catch {
-      // A non-JSON error body is fine; the status line above is enough.
-    }
-    throw new ApiError(response.status, detail)
-  }
-  return (response.status === 204 ? undefined : await response.json()) as T
-}
 
 export async function register(email: string, password: string): Promise<SessionRead> {
   const session = await authenticatedRequest<SessionRead>('/api/v1/auth/register', {
@@ -133,6 +85,39 @@ export function updateLibraryEntry(
     method: 'PATCH',
     body: JSON.stringify(update),
   })
+}
+
+/**
+ * Record one more deliberate completed cycle: a re-read or a re-watch.
+ *
+ * Phase 1AA. A POST, sent only when the reader presses the control. Nothing
+ * else in this module can move the count -- reading a work, refreshing, and
+ * changing status all leave it alone -- and the server returns the whole
+ * presentation, so the caller re-renders from its count rather than adding
+ * one to a local copy that could then disagree with the row.
+ *
+ * `client.ts` does not retry, and non-idempotent verbs are exactly why.
+ */
+export function recordReconsumption(workId: string): Promise<WorkPresentation> {
+  return authenticatedRequest<WorkPresentation>(
+    `/api/v1/library/${workId}/completions`,
+    { method: 'POST' },
+  )
+}
+
+/**
+ * Take back one recorded completion.
+ *
+ * The inverse of `recordReconsumption`, and sent only when the reader
+ * presses the control. The server refuses below a count of one -- a work
+ * finished once has a reading, not a mistake -- so a 409 here is an ordinary
+ * answer rather than a failure of this call.
+ */
+export function undoReconsumption(workId: string): Promise<WorkPresentation> {
+  return authenticatedRequest<WorkPresentation>(
+    `/api/v1/library/${workId}/completions`,
+    { method: 'DELETE' },
+  )
 }
 
 export function removeFromLibrary(workId: string): Promise<void> {

@@ -21,6 +21,7 @@ query ($id: Int) {
     siteUrl
     title { romaji english native }
     description(asHtml: false)
+    coverImage { extraLarge large medium }
     format
     status
     episodes
@@ -59,6 +60,7 @@ query ($id: Int) {
     siteUrl
     title { romaji english native }
     description(asHtml: false)
+    coverImage { extraLarge large medium }
     format
     status
     chapters

@@ -1,9 +1,9 @@
+import { authenticatedRequest } from './client'
 import type {
   PreferenceFeedback,
   PreferenceFeedbackList,
   PreferenceFeedbackValue,
 } from '../types/api'
-import { authenticatedRequest } from './library'
 
 /**
  * What the reader has said about Noema's readings of their taste.

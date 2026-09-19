@@ -65,12 +65,47 @@ def test_unknown_country_leaves_the_tradition_unstated() -> None:
 
 
 def test_title_variants_are_preserved_without_becoming_separate_works(solo_leveling) -> None:
+    """All three variants survive; the displayed one is the English title.
+
+    This used to assert the romaji, so a Korean webtoon was presented under a
+    transliterated name while AniList's own "Solo Leveling" sat unused in the
+    same record. `source_ref` rather than the title identifies the work, so
+    nothing about identity moves with the choice.
+    """
     titles = solo_leveling.extra_metadata["anilist"]["titles"]
 
     assert titles["romaji"] == "Na Honjaman Level Up"
     assert titles["english"] == "Solo Leveling"
     assert titles["native"] == "나 혼자만 레벨업"
-    assert solo_leveling.title == "Na Honjaman Level Up"
+
+    assert solo_leveling.title == "Solo Leveling"
+    # The native title is not lost to the choice.
+    assert solo_leveling.original_title == "나 혼자만 레벨업"
+
+
+def test_the_title_falls_back_when_english_is_missing() -> None:
+    """english -> romaji -> native, in that order."""
+    media = load_media("anilist_manga_solo_leveling.json")
+
+    media["title"]["english"] = None
+    assert AniListMangaAdapter(media=media).load().title == "Na Honjaman Level Up"
+
+    media["title"]["romaji"] = None
+    assert AniListMangaAdapter(media=media).load().title == "나 혼자만 레벨업"
+
+
+def test_choosing_a_title_does_not_touch_identity(solo_leveling) -> None:
+    """The work is the same work whichever of its names is displayed."""
+    media = load_media("anilist_manga_solo_leveling.json")
+    media["title"] = {**media["title"], "english": None}
+
+    other = AniListMangaAdapter(media=media).load()
+
+    assert other.title != solo_leveling.title
+    assert other.source_ref == solo_leveling.source_ref
+    assert other.external_ids == solo_leveling.external_ids
+    assert other.source == solo_leveling.source
+    assert other.domain_slug == solo_leveling.domain_slug
 
 
 def test_anilist_identifiers_are_preserved(vinland) -> None:
@@ -224,11 +259,18 @@ def test_provenance_identifies_adapter_and_source(vinland) -> None:
 
 
 def test_provenance_states_that_no_chapter_content_is_retrieved(vinland) -> None:
-    """The rights position is recorded on the work, not only in a docstring."""
+    """The rights position is recorded on the work, not only in a docstring.
+
+    Phase 1AA narrowed this claim rather than weakening it. The note used to
+    say no artwork was retrieved, which stopped being the whole truth once
+    covers were referenced: nothing is copied, but a URL to the publisher's
+    artwork is now stored. The record says exactly that.
+    """
     note = vinland.extra_metadata["provenance"]["license_note"]
 
     assert "AniList" in note
-    assert "No chapter text, scans, or artwork" in note
+    assert "No chapter text or scans are retrieved" in note
+    assert "referenced by URL only, never copied" in note
 
 
 # --- missing / malformed data -------------------------------------------

@@ -2,9 +2,11 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TasteProfile from './TasteProfile'
-import { setSessionToken } from '../api/library'
+import { resetSessionForTests, setAuthenticatedForTests } from '../auth/session'
 import type {
+  EvidenceCounts,
   PreferenceFeedback,
+  PreferenceOverview,
   TasteDashboard,
   TasteEvidenceSummary,
   TastePreferenceItem,
@@ -103,6 +105,40 @@ function dashboard(overrides: Partial<TasteDashboard> = {}): TasteDashboard {
   }
 }
 
+/** Counts as the overview sends them. Zeroed unless a test says otherwise. */
+function counts(overrides: Partial<EvidenceCounts> = {}): EvidenceCounts {
+  return {
+    works_exposed: 0,
+    works_started: 0,
+    works_completed: 0,
+    works_rated: 0,
+    positive_ratings: 0,
+    negative_ratings: 0,
+    rating_mean: null,
+    works_reconsumed: 0,
+    total_completions: 0,
+    works_abandoned: 0,
+    works_on_hold: 0,
+    ...overrides,
+  }
+}
+
+function overview(overrides: Partial<PreferenceOverview> = {}): PreferenceOverview {
+  return {
+    summary: {
+      total_interactions: 6,
+      works_rated: 6,
+      signals_with_direction: 1,
+      concepts_awaiting_ratings: 0,
+      rating_context_established: true,
+      interactions_without_concepts: 0,
+    },
+    signals: [],
+    awaiting_ratings: [],
+    ...overrides,
+  }
+}
+
 interface MockOptions {
   profile?: TasteDashboard
   feedback?: PreferenceFeedback[]
@@ -110,14 +146,20 @@ interface MockOptions {
   feedbackPostFails?: boolean
   /** Left unresolved, so the loading state can be observed. */
   hangDashboard?: boolean
+  /** The evidence source. Absent by default: most tests do not need it. */
+  overview?: PreferenceOverview
+  overviewFails?: boolean
 }
 
 let posted: unknown[] = []
+let requested: string[] = []
 
 function mockApi(options: MockOptions = {}) {
   posted = []
+  requested = []
   return vi.fn((input: string | URL, init?: RequestInit) => {
     const url = String(input)
+    requested.push(url)
     const json = (body: unknown, status = 200) =>
       Promise.resolve({ ok: true, status, json: () => Promise.resolve(body) } as Response)
 
@@ -153,6 +195,17 @@ function mockApi(options: MockOptions = {}) {
       return json({ items: options.feedback ?? [] })
     }
 
+    if (url.includes('/preferences/overview')) {
+      if (options.overviewFails || !options.overview) {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          json: () => Promise.resolve({ detail: 'the evidence layer is unavailable' }),
+        } as Response)
+      }
+      return json(options.overview)
+    }
+
     if (url.includes('/preferences/dashboard')) {
       if (options.hangDashboard) return new Promise<Response>(() => {})
       if (options.dashboardFails) {
@@ -176,7 +229,8 @@ function renderPage(options: MockOptions = {}) {
 
 describe('TasteProfile', () => {
   beforeEach(() => {
-    setSessionToken('a-session-token')
+    resetSessionForTests()
+    setAuthenticatedForTests(ACCOUNT.email)
   })
 
   // --- the page itself -----------------------------------------------------
@@ -201,7 +255,7 @@ describe('TasteProfile', () => {
     renderPage({ dashboardFails: true })
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('the engine is unavailable')
+    expect(alert).toHaveTextContent('The engine is unavailable.')
     expect(screen.queryByText('You particularly enjoy')).not.toBeInTheDocument()
   })
 
@@ -494,6 +548,262 @@ describe('TasteProfile', () => {
     expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What stands out' })).toBeInTheDocument()
     expect(screen.getByText(/Built from 6 rated works/)).toBeInTheDocument()
+  })
+
+  // --- the evidence source -------------------------------------------------
+
+  it('joins overview evidence to a concept by slug, never by position', async () => {
+    // The overview lists a different concept first. A positional join would
+    // attach Tragedy's evidence to Psychological Depth; the slug is what
+    // decides, so the wrong one must not appear.
+    const user = userEvent.setup()
+    renderPage({
+      profile: dashboard({ strongly_likes: [item()] }),
+      overview: overview({
+        signals: [
+          {
+            concept_slug: 'tragedy',
+            concept_name: 'Tragedy',
+            concept_type: 'theme',
+            direction: 'positive',
+            confidence_band: 'high',
+            evidence: counts({ works_rated: 99, rating_mean: 2.2 }),
+            contributions: [
+              {
+                work_id: 'w-wrong',
+                title: 'The Wrong Work',
+                domain_name: 'Anime',
+                rating: 2,
+                status: 'completed',
+                times_completed: 1,
+                in_library: true,
+              },
+            ],
+          },
+          {
+            concept_slug: 'psychological-depth',
+            concept_name: 'Psychological Depth',
+            concept_type: 'theme',
+            direction: 'positive',
+            confidence_band: 'high',
+            evidence: counts({
+              works_rated: 4,
+              positive_ratings: 3,
+              negative_ratings: 1,
+              rating_mean: 8.3,
+            }),
+            contributions: [
+              {
+                work_id: 'w-right',
+                title: 'The Right Work',
+                domain_name: 'Literature',
+                rating: 9,
+                status: 'completed',
+                times_completed: 1,
+                in_library: true,
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
+    await user.click(screen.getByText(/Why does Noema think this/))
+
+    expect(screen.getByText(/4 rated . 3 positive . 1 negative . average 8\.3\/10/)).toBeInTheDocument()
+    expect(screen.getByText('The Right Work')).toBeInTheDocument()
+    expect(screen.queryByText('The Wrong Work')).not.toBeInTheDocument()
+    expect(screen.queryByText(/99 rated/)).not.toBeInTheDocument()
+  })
+
+  it('shows only the evidence fields that have something to say', async () => {
+    const user = userEvent.setup()
+    renderPage({
+      profile: dashboard({ strongly_likes: [item()] }),
+      overview: overview({
+        signals: [
+          {
+            concept_slug: 'psychological-depth',
+            concept_name: 'Psychological Depth',
+            concept_type: 'theme',
+            direction: 'positive',
+            confidence_band: 'high',
+            evidence: counts({ works_rated: 4, positive_ratings: 4, rating_mean: 9 }),
+            contributions: [],
+          },
+        ],
+      }),
+    })
+
+    await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
+    await user.click(screen.getByText(/Why does Noema think this/))
+
+    // Nothing was abandoned or put on hold, so neither is stated as a finding.
+    expect(screen.queryByText(/abandoned/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/on hold/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/0 negative/)).not.toBeInTheDocument()
+  })
+
+  it('states reconsumption once, with the count rather than the adjective', async () => {
+    // The dashboard boolean and the overview count said the same thing. The
+    // one with a number in it is the better of the two.
+    const user = userEvent.setup()
+    renderPage({
+      profile: dashboard({
+        strongly_likes: [
+          item({
+            evidence_summary: {
+              rated_works: 4,
+              supporting_works: 4,
+              domains: ['Anime'],
+              includes_reconsumed_works: true,
+              has_mixed_evidence: false,
+            },
+          }),
+        ],
+      }),
+      overview: overview({
+        signals: [
+          {
+            concept_slug: 'psychological-depth',
+            concept_name: 'Psychological Depth',
+            concept_type: 'theme',
+            direction: 'positive',
+            confidence_band: 'high',
+            evidence: counts({
+              works_rated: 4,
+              positive_ratings: 4,
+              rating_mean: 9,
+              works_reconsumed: 1,
+              total_completions: 6,
+            }),
+            contributions: [],
+          },
+        ],
+      }),
+    })
+
+    await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
+    await user.click(screen.getByText(/Why does Noema think this/))
+
+    expect(
+      screen.getByText(/Returned to 1 of them \(6 completions in total\)/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Some of these are works you returned to/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the plain statement when there is no count to give', async () => {
+    // Without an overview signal the boolean is the only evidence there is,
+    // so it is still said.
+    const user = userEvent.setup()
+    renderPage({
+      profile: dashboard({
+        strongly_likes: [
+          item({
+            evidence_summary: {
+              rated_works: 4,
+              supporting_works: 4,
+              domains: ['Anime'],
+              includes_reconsumed_works: true,
+              has_mixed_evidence: false,
+            },
+          }),
+        ],
+      }),
+      overviewFails: true,
+    })
+
+    await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
+    await user.click(screen.getByText(/Why does Noema think this/))
+
+    expect(screen.getByText(/Some of these are works you returned to/)).toBeInTheDocument()
+  })
+
+  it('never promotes a low-confidence overview signal into a group', async () => {
+    // The overview knows about Tragedy. The dashboard did not establish it,
+    // so it must appear nowhere on the page as a preference.
+    renderPage({
+      profile: dashboard({ strongly_likes: [item()] }),
+      overview: overview({
+        signals: [
+          {
+            concept_slug: 'tragedy',
+            concept_name: 'Tragedy',
+            concept_type: 'theme',
+            direction: 'positive',
+            confidence_band: 'low',
+            evidence: counts({ works_rated: 1, positive_ratings: 1, rating_mean: 8 }),
+            contributions: [],
+          },
+        ],
+      }),
+    })
+
+    await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
+    expect(screen.queryByRole('heading', { level: 3, name: 'Tragedy' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1)
+  })
+
+  it('renders the whole profile when the evidence source fails', async () => {
+    renderPage({
+      profile: dashboard({ strongly_likes: [item()], what_stands_out: [STANDOUT] }),
+      overviewFails: true,
+    })
+
+    expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Psychological Depth' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'What stands out' })).toBeInTheDocument()
+    // The profile is poorer, not broken, and says nothing went wrong.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keeps concepts met but not rated out of the preference groups', async () => {
+    renderPage({
+      profile: dashboard({ strongly_likes: [item()] }),
+      overview: overview({
+        awaiting_ratings: [
+          {
+            concept_slug: 'identity',
+            concept_name: 'Identity',
+            concept_type: 'theme',
+            evidence: counts({ works_exposed: 3, works_completed: 2 }),
+            contributions: [],
+          },
+        ],
+      }),
+    })
+
+    const band = (
+      await screen.findByRole('heading', { name: 'Met, but not yet rated' })
+    ).closest('section') as HTMLElement
+    expect(within(band).getByText('Identity')).toBeInTheDocument()
+    expect(within(band).getByText(/not rated enough of them/)).toBeInTheDocument()
+
+    // And it is not inside any group that claims a preference.
+    const strongly = screen
+      .getByRole('heading', { name: /You particularly enjoy/ })
+      .closest('section') as HTMLElement
+    expect(within(strongly).queryByText('Identity')).not.toBeInTheDocument()
+  })
+
+  it('asks for nothing at all while signed out', async () => {
+    resetSessionForTests()
+    vi.stubGlobal('fetch', mockApi())
+    render(<TasteProfile onNavigate={() => {}} onOpenLibrary={() => {}} />)
+
+    expect(await screen.findByRole('button', { name: 'Log in' })).toBeInTheDocument()
+    expect(requested.filter((url) => url.includes('/preferences'))).toHaveLength(0)
+  })
+
+  it('keeps the account controls in the shell, not in the profile', async () => {
+    renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
+
+    await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
+    // One Log out, and it lives in the header beside the account -- the page
+    // body used to carry a second copy.
+    expect(screen.getAllByRole('button', { name: 'Log out' })).toHaveLength(1)
+    expect(screen.queryByText(/Signed in as/)).not.toBeInTheDocument()
   })
 
   // --- feedback ------------------------------------------------------------
