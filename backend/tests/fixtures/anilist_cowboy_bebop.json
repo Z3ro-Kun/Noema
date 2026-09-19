@@ -1,0 +1,405 @@
+{
+  "id": 1,
+  "idMal": 1,
+  "siteUrl": "https://anilist.co/anime/1",
+  "title": {
+    "romaji": "Cowboy Bebop",
+    "english": "Cowboy Bebop",
+    "native": "カウボーイビバップ"
+  },
+  "description": "Enter a world in the distant future, where Bounty Hunters roam the solar system. Spike and Jet, bounty hunting partners, set out on journeys in an ever struggling effort to win bounty rewards to survive.<br><br>\nWhile traveling, they meet up with other very interesting people. Could Faye, the beautiful and ridiculously poor gambler, Edward, the computer genius, and Ein, the engineered dog be a good addition to the group?",
+  "format": "TV",
+  "status": "FINISHED",
+  "episodes": 26,
+  "duration": 24,
+  "season": "SPRING",
+  "seasonYear": 1998,
+  "startDate": {
+    "year": 1998,
+    "month": 4,
+    "day": 3
+  },
+  "endDate": {
+    "year": 1999,
+    "month": 4,
+    "day": 24
+  },
+  "countryOfOrigin": "JP",
+  "source": "ORIGINAL",
+  "genres": [
+    "Action",
+    "Adventure",
+    "Drama",
+    "Sci-Fi"
+  ],
+  "averageScore": 86,
+  "popularity": 467804,
+  "tags": [
+    {
+      "name": "Space",
+      "rank": 94,
+      "category": "Setting-Universe",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Crime",
+      "rank": 92,
+      "category": "Theme-Other",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Episodic",
+      "rank": 89,
+      "category": "Technical",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Ensemble Cast",
+      "rank": 86,
+      "category": "Cast-Main Cast",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Primarily Adult Cast",
+      "rank": 85,
+      "category": "Cast-Main Cast",
+      "isGeneralSpoiler": false
+    }
+  ],
+  "studios": {
+    "edges": [
+      {
+        "isMain": true,
+        "node": {
+          "id": 14,
+          "name": "Sunrise",
+          "siteUrl": "https://anilist.co/studio/14"
+        }
+      },
+      {
+        "isMain": false,
+        "node": {
+          "id": 23,
+          "name": "Bandai Visual",
+          "siteUrl": "https://anilist.co/studio/23"
+        }
+      },
+      {
+        "isMain": false,
+        "node": {
+          "id": 233,
+          "name": "Bandai Entertainment",
+          "siteUrl": "https://anilist.co/studio/233"
+        }
+      }
+    ]
+  },
+  "staff": {
+    "edges": [
+      {
+        "role": "ADR Director (English)",
+        "node": {
+          "id": 95269,
+          "siteUrl": "https://anilist.co/staff/95269",
+          "name": {
+            "full": "Mary Elizabeth McGlynn",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Music",
+        "node": {
+          "id": 95508,
+          "siteUrl": "https://anilist.co/staff/95508",
+          "name": {
+            "full": "Youko Kanno",
+            "native": "菅野よう子"
+          }
+        }
+      },
+      {
+        "role": "Theme Song Composition (OP, ED1-ED3)",
+        "node": {
+          "id": 95508,
+          "siteUrl": "https://anilist.co/staff/95508",
+          "name": {
+            "full": "Youko Kanno",
+            "native": "菅野よう子"
+          }
+        }
+      },
+      {
+        "role": "Theme Song Arrangement (OP, ED1-ED3)",
+        "node": {
+          "id": 95508,
+          "siteUrl": "https://anilist.co/staff/95508",
+          "name": {
+            "full": "Youko Kanno",
+            "native": "菅野よう子"
+          }
+        }
+      }
+    ]
+  },
+  "characters": {
+    "edges": [
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 1,
+          "siteUrl": "https://anilist.co/character/1",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b1-ChxaldmieFlQ.png"
+          },
+          "name": {
+            "full": "Spike Spiegel",
+            "native": "スパイク・スピーゲル"
+          },
+          "description": "__Height:__ 185 cm   \n\nSpike Spiegel is a tall and lean 27-year-old bounty hunter born on Mars."
+        }
+      },
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 3,
+          "siteUrl": "https://anilist.co/character/3",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b3-JjH9Si9UM1NZ.png"
+          },
+          "name": {
+            "full": "Jet Black",
+            "native": "ジェット・ブラック"
+          },
+          "description": "Jet, known on his home satellite as the \"Black Dog\" for his tenacity, is a 36-year-old former cop from Ganymede (a Jovian satellite) and acts as [Spike](https://anilist.co/character/1/Spiegel-Spike)'s foil during the series.\n\nPhysically, Jet is very tall with a muscular build. He wears a beard with no mustache, and is completely bald save for the back of his head. Spike acts lazy and uninterested, whereas Jet is hard working and a jack-of-all-trades. Jet was once an investigator in the Inter Solar System Police (ISSP) for many years until he lost his arm in an investigation that went awry when his corrupt partner (and friend at the time) betrayed him. His arm was replaced with a cybernetic limb (later revealed to be by choice, as biological replacements were possible, he wanted the fake arm as a reminder of what happened), yet his loss of limb coupled with the general corruption of the police force prompted Jet to quit the ISSP in disgust and become a freelance bounty hunter.\n\nJet also considers himself something of a renaissance man: he cultivates bonsai trees, cooks, enjoys jazz/blues music (he named his ship the Bebop, referring to a type of jazz), especially Charlie Parker, and even has interest in Goethe. As a character, Jet is the quintessential oyaji or \"dad\" even though he often wishes people would view him as a more brotherly figure (so as not to seem old).\n\nJet is skilled with handguns, typically carrying a pre-2004 Walther P99, as well as the use of the netgun. He is good with hand to hand combat as well. Unlike Spike, Jet tends to use more raw muscle than technique. He is also a great mechanic and pilot. Aside from the converted interplanetary fishing trawler vessel Bebop, Jet flies a smaller ship called Hammerhead. The Hammerhead appears to be a modified (Jet added larger engines and fuel tanks) salvage-craft that uses a mechanical arm equipped with a harpoon as its main weapon, which is somewhat analogous to his own mechanical arm. Both the Hammerhead and the Bebop are able to land on water, and have a fishing theme, most likely because Ganymede's surface is mostly covered with water (it is later revealed that the Bebop was originally a fishing ship that Jet \"customized\" with larger engines).\n\n~!During the series, it is revealed that Jet once lived with a woman named [Alisa](https://anilist.co/character/213076/Alisa), who left him because he was too controlling. Later they meet up again when Alisa's new boyfriend [Rhint](https://anilist.co/character/23687/Celonias-Rhint) is wanted for murder. Jet then ends up in a situation somewhat similar to that of [Vicious](https://anilist.co/character/2734/Vicious), where he must hunt down a woman who broke his heart, and her lover.\n\nIn a later episode, another Vicious/Spike parallel is set up when Jet finds out that it was his old partner [Fad](https://anilist.co/character/42425/Fad) who betrayed him (though in Jet's case, there was no love affair involved). Fad arranged for Jet's death in a setup, but he survived with only a missing arm and a scar on his face. It is worth noting that Jet managed to face the demons of his past and let them go, in contrast to Spike, who was killed when he confronted his. This is likely due to the contrast in the two approaches to the past. While Spike hid and fled from his past, Jet tracked it down and confronted it.!~"
+        }
+      },
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 2,
+          "siteUrl": "https://anilist.co/character/2",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b2-0Iszg6Izgt4p.png"
+          },
+          "name": {
+            "full": "Faye Valentine",
+            "native": "フェイ・バレンタイン"
+          },
+          "description": "One of the members of the bounty hunting crew in the anime series Cowboy Bebop. Although appearing to be no more than her 23 years alive suggests, Faye is actually upwards of 74-years-old, having been put into cryogenic freeze after a space shuttle accident. During the course of the series (set in 2071), Faye manages to cross paths with [Spike](https://anilist.co/character/1) and [Jet](https://anilist.co/character/3) twice before she finally makes herself at home aboard their ship the second time, much to the consternation and disapproval of the two men, both of whom have their own reservations about women in general. Faye herself is brash, egotistical, and quite lazy, despite taking plenty of time to pamper and care for her own appearance. Faye has also been placed under arrest several times in the series and spends much time in handcuffs on the ship. She, at times, expects the boys to take care of bounties for her, while she sits by idly to reap the benefits and eat all their food, another source of conflict.  \n\nSeemingly little more than a thorn in her partners’ sides, Faye is actually a well-rounded member of the team. She can handle herself exceptionally well for a woman of her slight appearance, displaying at least once in the series that she packs quite a mean punch. Adept at flying, Faye has stood her ground just as well as Spike has in an aerial dogfight in her ship Red Tail, at times even against Spike in an aerial dogfight. She also excels with guns, and is first seen in the series completely disabling a ship with a Heckler &amp; Koch MP5, though she is immediately apprehended afterward. In the movie, she is seen with the same gun, in addition to her normal companion: a Glock 30. Where Faye really shines, however, is with her mouth. She has an almost unstoppable attitude, and even her sometimes innocent smile can be seen as dangerous. Sarcastic and presumptuous, she rarely appears weak or in need of support. She brags and takes care of herself, never trusting others, cheating and lying her way from one day to the next."
+        }
+      },
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 16,
+          "siteUrl": "https://anilist.co/character/16",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b16-80wd87nl1Rue.png"
+          },
+          "name": {
+            "full": "Edward Wong Hau Pepelu Tivrusky IV",
+            "native": "エドワード・ウォン・ハウ・ペペル・チブルスキー4世"
+          },
+          "description": "Ed is an eccentric, resourceful, childlike, tomboyish, and intelligent teenager. Ed first encounters the Bebop and its crew when she hacks the ship on its way to Earth. After Ed helps the Bebop crew cash in the Earth hacker bounty, she insists on joining the crew. When [Faye](https://anilist.co/character/2/Valentine-Faye) tries to leave Earth without her, Ed hacks the Bebop and holds it hostage until she is permitted to join.\n\n~!Later in the story when the Bebop is back on Earth, the crew stumbles across an orphanage that Ed used to live in. After seeing some old friends there, Ed is informed that her father has come looking for her recently. Ed decides to make up a bounty on her father to convince [Spike](https://anilist.co/character/1/Spiegel-Spike) to find him. When Spike finds him, Ed decides to leave the Bebop with [Ein](https://anilist.co/character/4/Ein) to live with her father on Earth.!~"
+        }
+      }
+    ]
+  },
+  "relations": {
+    "edges": [
+      {
+        "relationType": "SIDE_STORY",
+        "node": {
+          "id": 5,
+          "type": "ANIME",
+          "format": "MOVIE",
+          "title": {
+            "romaji": "Cowboy Bebop: Tengoku no Tobira",
+            "english": "Cowboy Bebop: The Movie - Knockin' on Heaven's Door"
+          }
+        }
+      },
+      {
+        "relationType": "SIDE_STORY",
+        "node": {
+          "id": 17205,
+          "type": "ANIME",
+          "format": "SPECIAL",
+          "title": {
+            "romaji": "Cowboy Bebop: Ein no Natsuyasumi",
+            "english": "Ein's Summer Vacation"
+          }
+        }
+      },
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 30173,
+          "type": "MANGA",
+          "format": "MANGA",
+          "title": {
+            "romaji": "Cowboy Bebop",
+            "english": "Cowboy Bebop"
+          }
+        }
+      },
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 30174,
+          "type": "MANGA",
+          "format": "MANGA",
+          "title": {
+            "romaji": "Shooting Star Bebop: Cowboy Bebop",
+            "english": "Cowboy Bebop Shooting Star"
+          }
+        }
+      },
+      {
+        "relationType": "SUMMARY",
+        "node": {
+          "id": 4037,
+          "type": "ANIME",
+          "format": "SPECIAL",
+          "title": {
+            "romaji": "Cowboy Bebop: Yoseatsume Blues",
+            "english": null
+          }
+        }
+      }
+    ]
+  },
+  "streamingEpisodes": [
+    {
+      "title": "Episode 1 - Asteroid Blues",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G7PU4VJEJ/asteroid-blues"
+    },
+    {
+      "title": "Episode 2 - Stray Dog Strut",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GX9UQ7ZXW/stray-dog-strut"
+    },
+    {
+      "title": "Episode 3 - Honky Tonk Women",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G14U4EGNQ/honky-tonk-women"
+    },
+    {
+      "title": "Episode 4 - Gateway Shuffle",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GK9U34D13/gateway-shuffle"
+    },
+    {
+      "title": "Episode 5 - Ballad of Fallen Angels",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GVWU0Z4K1/ballad-of-fallen-angels"
+    },
+    {
+      "title": "Episode 6 - Sympathy for the Devil",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GPWUK5DP3/sympathy-for-the-devil"
+    },
+    {
+      "title": "Episode 7 - Heavy Metal Queen",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GZ7UVX1ZP/heavy-metal-queen"
+    },
+    {
+      "title": "Episode 8 - Waltz for Venus",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GWDU8KQ1W/waltz-for-venus"
+    },
+    {
+      "title": "Episode 9 - Jamming with Edward",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G0DUN0J77/jamming-with-edward"
+    },
+    {
+      "title": "Episode 10 - Ganymede Elegy",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G9DUEPG85/ganymede-elegy"
+    },
+    {
+      "title": "Episode 11 - Toys in the Attic",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GJWU2XEV7/toys-in-the-attic"
+    },
+    {
+      "title": "Episode 12 - Jupiter Jazz (part 1)",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GK9U34DX3/jupiter-jazz-part-1"
+    },
+    {
+      "title": "Episode 13 - Jupiter Jazz (part 2)",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GPWUK5DG3/jupiter-jazz-part-2"
+    },
+    {
+      "title": "Episode 14 - Bohemian Rhapsody",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GD9UVW8XW/bohemian-rhapsody"
+    },
+    {
+      "title": "Episode 15 - My Funny Valentine",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GG1U2EZG9/my-funny-valentine"
+    },
+    {
+      "title": "Episode 16 - Black Dog Serenade",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G9DUEPG35/black-dog-serenade"
+    },
+    {
+      "title": "Episode 17 - Mushroom Samba",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G4VUQX825/mushroom-samba"
+    },
+    {
+      "title": "Episode 18 - Speak Like a Child",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GN7UD7VVJ/speak-like-a-child"
+    },
+    {
+      "title": "Episode 19 - Wild Horses",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GWDU8KQQ0/wild-horses"
+    },
+    {
+      "title": "Episode 20 - Pierrot Le Fou",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G7PU4VJJ5/pierrot-le-fou"
+    },
+    {
+      "title": "Episode 21 - Boogie Woogie Feng Shui",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G4VUQX88Z/boogie-woogie-feng-shui"
+    },
+    {
+      "title": "Episode 22 - Cowboy Funk",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GN7UD7VVE/cowboy-funk"
+    },
+    {
+      "title": "Episode 23 - Brain Scratch",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GVWU0Z444/brain-scratch"
+    },
+    {
+      "title": "Episode 24 - Hard Luck Woman",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G8WUNW0G3/hard-luck-woman"
+    },
+    {
+      "title": "Episode 25 - The Real Folk Blues (part 1)",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/GG1U2EZ4P/the-real-folk-blues-part-1"
+    },
+    {
+      "title": "Episode 26 - The Real Folk Blues (part 2)",
+      "site": "Crunchyroll",
+      "url": "http://www.crunchyroll.com/watch/G9DUEPG5D/the-real-folk-blues-part-2"
+    }
+  ]
+}

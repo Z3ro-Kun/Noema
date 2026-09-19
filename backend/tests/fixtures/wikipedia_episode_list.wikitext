@@ -1,0 +1,66 @@
+{{Infobox television season
+| season_name = Test Series
+| num_episodes = 3
+| network = [[Test Network]]
+}}
+
+'''''Test Series''''' is an anime television series. This lead paragraph is
+article prose and must never be ingested as episode narrative.
+
+== Cast ==
+* [[Actor One]] as Captain — this is a cast list, not narrative.
+* [[Actor Two]] as Engineer
+
+== Production ==
+The series was produced by [[Test Studio]] between 1998 and 1999. Production
+notes are not plot summaries and must be ignored.
+
+== Episode list ==
+{| class="wikitable"
+! Overview table that is not an episode template
+|}
+
+{{Episode list
+| EpisodeNumber   = 1
+| Title           = The Departure
+| TranslitTitle   = Shuppatsu
+| NativeTitle     = 出発
+| DirectedBy      = [[Director One]]
+| WrittenBy       = [[Writer One]]
+| OriginalAirDate = {{Start date|1998|10|23}}
+| ShortSummary    = The crew of the ''Kestrel'' leave [[Test Harbour|the harbour]] at dawn,
+carrying a cargo they have not been told the contents of. The captain reads the
+manifest twice and says nothing.<ref name="guide">{{cite book |title=A Guide |page=14}}</ref>
+
+By nightfall the ship is well past the buoys and the engineer notices the
+cargo is humming.
+| LineColor = 4a6b8a
+}}
+{{Episode list
+| EpisodeNumber   = 2
+| Title           = Salt and Iron
+| OriginalAirDate = {{Start date|1998|10|30}}
+| ShortSummary    = A storm forces the ''Kestrel'' into a harbour it was trying to avoid.<ref name="guide" />
+The harbourmaster recognises the captain and does not say so. See also
+[https://example.invalid/ext an external link] which must be reduced to its text.
+}}
+{{Episode list
+| EpisodeNumber   = SP
+| Title           = Mish-Mash Blues
+| ShortSummary    = A recap special. Its episode number cannot be read as an
+integer, so it must be skipped rather than renumbered.
+}}
+{{Episode list
+| EpisodeNumber   = 3
+| Title           = The Return
+| ShortSummary    =
+}}
+
+== Reception ==
+Critics praised the series. Reception prose is not narrative and must be ignored.
+
+== References ==
+{{reflist}}
+
+== External links ==
+* [https://example.invalid/series Official site]

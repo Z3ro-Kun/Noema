@@ -1,0 +1,270 @@
+{
+  "id": 105398,
+  "idMal": 121496,
+  "siteUrl": "https://anilist.co/manga/105398",
+  "title": {
+    "romaji": "Na Honjaman Level Up",
+    "english": "Solo Leveling",
+    "native": "나 혼자만 레벨업"
+  },
+  "description": "In a world where awakened beings called “Hunters” must battle deadly monsters to protect humanity, Seong Jin-U, nicknamed “the weakest hunter of all mankind,” finds himself in a constant struggle for survival. One day, after a brutal encounter in an overpowered dungeon wipes out his party and threatens to end his life, a mysterious System chooses him as its sole player: Jin-U has been granted the rare opportunity to level up his abilities, possibly beyond any known limits. Follow Jin-U’s journey as he takes on ever-stronger enemies, both human and monster, to discover the secrets deep within the dungeons and the ultimate extent of his powers.\n<br><br>\n(Source: Tappytoon)\n<br><br>\n<i>Note: Includes 22 extra chapters.</i>",
+  "format": "MANGA",
+  "status": "FINISHED",
+  "chapters": 201,
+  "volumes": 15,
+  "startDate": {
+    "year": 2018,
+    "month": 3,
+    "day": 4
+  },
+  "endDate": {
+    "year": 2023,
+    "month": 5,
+    "day": 31
+  },
+  "countryOfOrigin": "KR",
+  "source": "OTHER",
+  "genres": [
+    "Action",
+    "Adventure",
+    "Fantasy"
+  ],
+  "averageScore": 84,
+  "popularity": 284941,
+  "tags": [
+    {
+      "name": "Dungeon",
+      "rank": 95,
+      "category": "Setting-Scene",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Male Protagonist",
+      "rank": 93,
+      "category": "Cast-Main Cast",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Super Power",
+      "rank": 92,
+      "category": "Theme-Fantasy",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "War",
+      "rank": 90,
+      "category": "Theme-Other",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Full Color",
+      "rank": 89,
+      "category": "Technical",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Necromancy",
+      "rank": 87,
+      "category": "Theme-Fantasy",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Magic",
+      "rank": 86,
+      "category": "Theme-Fantasy",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Urban Fantasy",
+      "rank": 84,
+      "category": "Setting-Universe",
+      "isGeneralSpoiler": false
+    }
+  ],
+  "staff": {
+    "edges": [
+      {
+        "role": "Art",
+        "node": {
+          "id": 120178,
+          "siteUrl": "https://anilist.co/staff/120178",
+          "name": {
+            "full": "Seong-Rak Jang",
+            "native": "장성락"
+          }
+        }
+      },
+      {
+        "role": "Story (chs 1-92)",
+        "node": {
+          "id": 129339,
+          "siteUrl": "https://anilist.co/staff/129339",
+          "name": {
+            "full": "So-Ryeong Gi",
+            "native": "기소령"
+          }
+        }
+      },
+      {
+        "role": "Original Story",
+        "node": {
+          "id": 213723,
+          "siteUrl": "https://anilist.co/staff/213723",
+          "name": {
+            "full": "Chu-Gong",
+            "native": "추공"
+          }
+        }
+      },
+      {
+        "role": "Story (chs 93-201)",
+        "node": {
+          "id": 213724,
+          "siteUrl": "https://anilist.co/staff/213724",
+          "name": {
+            "full": "Hyeon-Gun",
+            "native": "현군"
+          }
+        }
+      },
+      {
+        "role": "Lettering (English)",
+        "node": {
+          "id": 225310,
+          "siteUrl": "https://anilist.co/staff/225310",
+          "name": {
+            "full": "Abigail Blackman",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (Polish)",
+        "node": {
+          "id": 354458,
+          "siteUrl": "https://anilist.co/staff/354458",
+          "name": {
+            "full": "Adrianna Jarzębowska",
+            "native": null
+          }
+        }
+      }
+    ]
+  },
+  "characters": {
+    "edges": [
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 129928,
+          "siteUrl": "https://anilist.co/character/129928",
+          "name": {
+            "full": "Jin-U Seong",
+            "native": "성진우"
+          },
+          "description": "__Class:__ Mage\n__Relatives:__ [Park Kyung-Hye](https://anilist.co/character/209396/KyungHye-Park) (Mother), [Seong Jin-Ah](https://anilist.co/character/138791/JinAh-Sung) (Sister), ~![Seong Il-Hwan](https://anilist.co/character/138790/IlHwan-Sung) (Father), [Cha Hae-In](https://anilist.co/character/138789/HaeIn-Cha) (Wife), [Seong Su-Ho](https://anilist.co/character/306654/Suho-Sung) (Son)!~ \n~!__Guild:__ Ahjin Guild (Guild Master)\n__Affiliation:__ Korean Hunters Association (helper), White Tiger Guild (helper), Hunters Guild (helper), Knights Guild (helper), Ahjin Guild (Guild Master)!~\n\nSeong Jin-U is known as an infamously weak E-Rank Hunter. He is a humble and benevolent individual who cares deeply for his family and has an ardent desire to become stronger. As a result, he shares a close relationship with his sister and his mother, and rarely wastes an opportunity to refine his skills and gain more power.\n\n~!He becomes an S-Rank hunter after being given a chance to become stronger by the System.!~"
+        }
+      },
+      {
+        "role": "SUPPORTING",
+        "node": {
+          "id": 138789,
+          "siteUrl": "https://anilist.co/character/138789",
+          "name": {
+            "full": "Hae-In Cha",
+            "native": "차해인"
+          },
+          "description": "__Guild:__ Hunters Guild\n__Class:__ Sword Fighter\n__Affiliations:__ Jeju Island Raid Party, [Song Chi-Yul](https://anilist.co/character/136073/ChiYul--Song)’s Dojo (Disciple)\n\nCha Hae-In is the Vice-Guild Master of the Hunters Guild. She is an S rank hunter and the 9th ranked hunter in South Korea. She possesses the unique ability of mana smell and hates the smell of hunters except for [Sung Jin-Woo](https://anilist.co/character/129928/JinWoo-Sung).\n\n"
+        }
+      },
+      {
+        "role": "SUPPORTING",
+        "node": {
+          "id": 136073,
+          "siteUrl": "https://anilist.co/character/136073",
+          "name": {
+            "full": "Chi-Yul Song",
+            "native": "송치율"
+          },
+          "description": "__Magic Type:__ Fire\n\nKorean C-Rank Hunter and kumdo teacher. He is also one of Jinwoo's old friends, having known him since he was a E-Rank Hunter."
+        }
+      },
+      {
+        "role": "SUPPORTING",
+        "node": {
+          "id": 136074,
+          "siteUrl": "https://anilist.co/character/136074",
+          "name": {
+            "full": "Ju-Hui Lee",
+            "native": "이주희"
+          },
+          "description": "She is a healer with rank B."
+        }
+      }
+    ]
+  },
+  "relations": {
+    "edges": [
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 151807,
+          "type": "ANIME",
+          "format": "TV",
+          "title": {
+            "romaji": "Ore dake Level Up na Ken",
+            "english": "Solo Leveling"
+          }
+        }
+      },
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 176496,
+          "type": "ANIME",
+          "format": "TV",
+          "title": {
+            "romaji": "Ore dake Level Up na Ken: Season 2 - Arise from the Shadow",
+            "english": "Solo Leveling Season 2 -Arise from the Shadow-"
+          }
+        }
+      },
+      {
+        "relationType": "SEQUEL",
+        "node": {
+          "id": 179445,
+          "type": "MANGA",
+          "format": "MANGA",
+          "title": {
+            "romaji": "Na Honjaman Level Up: Ragnarok",
+            "english": "Solo Leveling: Ragnarok"
+          }
+        }
+      },
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 184694,
+          "type": "ANIME",
+          "format": "MOVIE",
+          "title": {
+            "romaji": "Ore dake Level Up na Ken: ReAwakening",
+            "english": "Solo Leveling -ReAwakening-"
+          }
+        }
+      },
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 213846,
+          "type": "ANIME",
+          "format": "MOVIE",
+          "title": {
+            "romaji": "Ore dake Level Up na Ken: Beyond the System",
+            "english": "Solo Leveling: Beyond the System"
+          }
+        }
+      }
+    ]
+  }
+}

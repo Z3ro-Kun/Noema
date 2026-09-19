@@ -1,0 +1,242 @@
+{
+  "id": 5,
+  "idMal": 5,
+  "siteUrl": "https://anilist.co/anime/5",
+  "title": {
+    "romaji": "Cowboy Bebop: Tengoku no Tobira",
+    "english": "Cowboy Bebop: The Movie - Knockin' on Heaven's Door",
+    "native": "カウボーイビバップ天国の扉"
+  },
+  "description": "As the Cowboy Bebop crew travels the stars, they learn of the largest bounty yet, a huge 300 million Woolongs. Apparently, someone is wielding a hugely powerful chemical weapon, and of course the authorities are at a loss to stop it. The war to take down the most dangerous criminal yet forces the crew to face a true madman, with bare hope to succeed.\n<br><br>\n(Source: Anime News Network)",
+  "format": "MOVIE",
+  "status": "FINISHED",
+  "episodes": 1,
+  "duration": 115,
+  "season": "SUMMER",
+  "seasonYear": 2001,
+  "startDate": {
+    "year": 2001,
+    "month": 9,
+    "day": 1
+  },
+  "endDate": {
+    "year": 2001,
+    "month": 9,
+    "day": 1
+  },
+  "countryOfOrigin": "JP",
+  "source": "ORIGINAL",
+  "genres": [
+    "Action",
+    "Drama",
+    "Mystery",
+    "Sci-Fi"
+  ],
+  "averageScore": 82,
+  "popularity": 84506,
+  "tags": [
+    {
+      "name": "Terrorism",
+      "rank": 98,
+      "category": "Theme-Other",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Primarily Adult Cast",
+      "rank": 86,
+      "category": "Cast-Main Cast",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Philosophy",
+      "rank": 81,
+      "category": "Theme-Other",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Martial Arts",
+      "rank": 80,
+      "category": "Theme-Action",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Crime",
+      "rank": 80,
+      "category": "Theme-Other",
+      "isGeneralSpoiler": false
+    }
+  ],
+  "studios": {
+    "edges": [
+      {
+        "isMain": true,
+        "node": {
+          "id": 4,
+          "name": "bones",
+          "siteUrl": "https://anilist.co/studio/4"
+        }
+      },
+      {
+        "isMain": true,
+        "node": {
+          "id": 14,
+          "name": "Sunrise",
+          "siteUrl": "https://anilist.co/studio/14"
+        }
+      },
+      {
+        "isMain": false,
+        "node": {
+          "id": 23,
+          "name": "Bandai Visual",
+          "siteUrl": "https://anilist.co/studio/23"
+        }
+      },
+      {
+        "isMain": false,
+        "node": {
+          "id": 6444,
+          "name": "Manga Entertainment",
+          "siteUrl": "https://anilist.co/studio/6444"
+        }
+      },
+      {
+        "isMain": false,
+        "node": {
+          "id": 102,
+          "name": "Funimation",
+          "siteUrl": "https://anilist.co/studio/102"
+        }
+      }
+    ]
+  },
+  "staff": {
+    "edges": [
+      {
+        "role": "ADR Director (English)",
+        "node": {
+          "id": 95269,
+          "siteUrl": "https://anilist.co/staff/95269",
+          "name": {
+            "full": "Mary Elizabeth McGlynn",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Music",
+        "node": {
+          "id": 95508,
+          "siteUrl": "https://anilist.co/staff/95508",
+          "name": {
+            "full": "Youko Kanno",
+            "native": "菅野よう子"
+          }
+        }
+      },
+      {
+        "role": "Storyboard",
+        "node": {
+          "id": 97009,
+          "siteUrl": "https://anilist.co/staff/97009",
+          "name": {
+            "full": "Shinichirou Watanabe",
+            "native": "渡辺信一郎"
+          }
+        }
+      },
+      {
+        "role": "Director",
+        "node": {
+          "id": 97009,
+          "siteUrl": "https://anilist.co/staff/97009",
+          "name": {
+            "full": "Shinichirou Watanabe",
+            "native": "渡辺信一郎"
+          }
+        }
+      }
+    ]
+  },
+  "characters": {
+    "edges": [
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 1,
+          "siteUrl": "https://anilist.co/character/1",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b1-ChxaldmieFlQ.png"
+          },
+          "name": {
+            "full": "Spike Spiegel",
+            "native": "スパイク・スピーゲル"
+          },
+          "description": "__Height:__ 185 cm   \n\nSpike Spiegel is a tall and lean 27-year-old bounty hunter born on Mars."
+        }
+      },
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 2,
+          "siteUrl": "https://anilist.co/character/2",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b2-0Iszg6Izgt4p.png"
+          },
+          "name": {
+            "full": "Faye Valentine",
+            "native": "フェイ・バレンタイン"
+          },
+          "description": "One of the members of the bounty hunting crew in the anime series Cowboy Bebop. Although appearing to be no more than her 23 years alive suggests, Faye is actually upwards of 74-years-old, having been put into cryogenic freeze after a space shuttle accident. During the course of the series (set in 2071), Faye manages to cross paths with [Spike](https://anilist.co/character/1) and [Jet](https://anilist.co/character/3) twice before she finally makes herself at home aboard their ship the second time, much to the consternation and disapproval of the two men, both of whom have their own reservations about women in general. Faye herself is brash, egotistical, and quite lazy, despite taking plenty of time to pamper and care for her own appearance. Faye has also been placed under arrest several times in the series and spends much time in handcuffs on the ship. She, at times, expects the boys to take care of bounties for her, while she sits by idly to reap the benefits and eat all their food, another source of conflict.  \n\nSeemingly little more than a thorn in her partners’ sides, Faye is actually a well-rounded member of the team. She can handle herself exceptionally well for a woman of her slight appearance, displaying at least once in the series that she packs quite a mean punch. Adept at flying, Faye has stood her ground just as well as Spike has in an aerial dogfight in her ship Red Tail, at times even against Spike in an aerial dogfight. She also excels with guns, and is first seen in the series completely disabling a ship with a Heckler &amp; Koch MP5, though she is immediately apprehended afterward. In the movie, she is seen with the same gun, in addition to her normal companion: a Glock 30. Where Faye really shines, however, is with her mouth. She has an almost unstoppable attitude, and even her sometimes innocent smile can be seen as dangerous. Sarcastic and presumptuous, she rarely appears weak or in need of support. She brags and takes care of herself, never trusting others, cheating and lying her way from one day to the next."
+        }
+      },
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 8435,
+          "siteUrl": "https://anilist.co/character/8435",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b8435-IL3RhRSazwFp.png"
+          },
+          "name": {
+            "full": "Electra Ovilo",
+            "native": "エレクトラ・オヴィロゥ"
+          },
+          "description": "Electra Ovilo is a veteran of the Titan War. Her love for Vincent caused them to have a short-term relationship, during which Vincent transferred the vaccine to Electra. She is unaware of this until Vincent sets free the Nanomachines on the Monorail and she survives. She meets Spike by chance when he infiltrates a bio weapon lab fronting as a pharmaceutical company where she works. After a few more chance meetings, and witnessing his being shot and thrown from a monorail by Vincent, she teams up with the crew of the Bebop to put an end to Vincent's intent to destroy the population of Mars. The samples of her blood are used to make the vaccine that is spread over Alba city. In the end, it is she who shoots Vincent and kills him. She cries for him when he admits he remembers her and their love for one another as he is dying.   (Source: Wikipedia)"
+        }
+      },
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 3,
+          "siteUrl": "https://anilist.co/character/3",
+          "image": {
+            "large": "https://s4.anilist.co/file/anilistcdn/character/large/b3-JjH9Si9UM1NZ.png"
+          },
+          "name": {
+            "full": "Jet Black",
+            "native": "ジェット・ブラック"
+          },
+          "description": "Jet, known on his home satellite as the \"Black Dog\" for his tenacity, is a 36-year-old former cop from Ganymede (a Jovian satellite) and acts as [Spike](https://anilist.co/character/1/Spiegel-Spike)'s foil during the series.\n\nPhysically, Jet is very tall with a muscular build. He wears a beard with no mustache, and is completely bald save for the back of his head. Spike acts lazy and uninterested, whereas Jet is hard working and a jack-of-all-trades. Jet was once an investigator in the Inter Solar System Police (ISSP) for many years until he lost his arm in an investigation that went awry when his corrupt partner (and friend at the time) betrayed him. His arm was replaced with a cybernetic limb (later revealed to be by choice, as biological replacements were possible, he wanted the fake arm as a reminder of what happened), yet his loss of limb coupled with the general corruption of the police force prompted Jet to quit the ISSP in disgust and become a freelance bounty hunter.\n\nJet also considers himself something of a renaissance man: he cultivates bonsai trees, cooks, enjoys jazz/blues music (he named his ship the Bebop, referring to a type of jazz), especially Charlie Parker, and even has interest in Goethe. As a character, Jet is the quintessential oyaji or \"dad\" even though he often wishes people would view him as a more brotherly figure (so as not to seem old).\n\nJet is skilled with handguns, typically carrying a pre-2004 Walther P99, as well as the use of the netgun. He is good with hand to hand combat as well. Unlike Spike, Jet tends to use more raw muscle than technique. He is also a great mechanic and pilot. Aside from the converted interplanetary fishing trawler vessel Bebop, Jet flies a smaller ship called Hammerhead. The Hammerhead appears to be a modified (Jet added larger engines and fuel tanks) salvage-craft that uses a mechanical arm equipped with a harpoon as its main weapon, which is somewhat analogous to his own mechanical arm. Both the Hammerhead and the Bebop are able to land on water, and have a fishing theme, most likely because Ganymede's surface is mostly covered with water (it is later revealed that the Bebop was originally a fishing ship that Jet \"customized\" with larger engines).\n\n~!During the series, it is revealed that Jet once lived with a woman named [Alisa](https://anilist.co/character/213076/Alisa), who left him because he was too controlling. Later they meet up again when Alisa's new boyfriend [Rhint](https://anilist.co/character/23687/Celonias-Rhint) is wanted for murder. Jet then ends up in a situation somewhat similar to that of [Vicious](https://anilist.co/character/2734/Vicious), where he must hunt down a woman who broke his heart, and her lover.\n\nIn a later episode, another Vicious/Spike parallel is set up when Jet finds out that it was his old partner [Fad](https://anilist.co/character/42425/Fad) who betrayed him (though in Jet's case, there was no love affair involved). Fad arranged for Jet's death in a setup, but he survived with only a missing arm and a scar on his face. It is worth noting that Jet managed to face the demons of his past and let them go, in contrast to Spike, who was killed when he confronted his. This is likely due to the contrast in the two approaches to the past. While Spike hid and fled from his past, Jet tracked it down and confronted it.!~"
+        }
+      }
+    ]
+  },
+  "relations": {
+    "edges": [
+      {
+        "relationType": "PARENT",
+        "node": {
+          "id": 1,
+          "type": "ANIME",
+          "format": "TV",
+          "title": {
+            "romaji": "Cowboy Bebop",
+            "english": "Cowboy Bebop"
+          }
+        }
+      }
+    ]
+  },
+  "streamingEpisodes": []
+}

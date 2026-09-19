@@ -1,0 +1,30 @@
+{
+  "id": 999999,
+  "idMal": null,
+  "siteUrl": null,
+  "title": {
+    "romaji": null,
+    "english": null,
+    "native": "テスト作品"
+  },
+  "description": null,
+  "format": null,
+  "status": "NOT_YET_RELEASED",
+  "episodes": null,
+  "duration": null,
+  "season": null,
+  "seasonYear": null,
+  "startDate": { "year": 2027, "month": null, "day": null },
+  "endDate": { "year": null, "month": null, "day": null },
+  "countryOfOrigin": null,
+  "source": null,
+  "genres": [],
+  "averageScore": null,
+  "popularity": null,
+  "tags": [],
+  "studios": { "edges": [] },
+  "staff": { "edges": [] },
+  "characters": { "edges": [] },
+  "relations": { "edges": [] },
+  "streamingEpisodes": []
+}

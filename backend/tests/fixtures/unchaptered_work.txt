@@ -1,0 +1,4 @@
+A short piece with no chapter divisions of any kind.
+
+It is only two paragraphs long, which is the point: the adapter must not
+invent a structure that this source does not actually provide.

@@ -1,0 +1,19 @@
+== Season 2 (1999) ==
+Season sub-articles and main-article sections embed the sublist variant of the
+same template family.
+
+{{Episode table|background=#4a6b8a|overall=|title=|director=|writer=|airdate=}}
+{{Episode list/sublist|List of Test Series episodes
+| EpisodeNumber   = 14
+| Title           = Deep Water
+| OriginalAirDate = {{Start date|1999|1|8}}
+| ShortSummary    = The engineer finally opens the cargo and finds it empty,
+which is worse than any of the possibilities she had prepared for.
+}}
+{{Episode list/sublist|List of Test Series episodes
+| EpisodeNumber   = 15
+| Title           = Landfall
+| OriginalAirDate = {{Start date|1999|1|15}}
+| ShortSummary    = They make landfall at a port that is not on any chart the
+captain owns.
+}}

@@ -1,0 +1,107 @@
+# Noema — repository ignore rules.
+#
+# Written against what this repository actually produces, not a template.
+# Everything below corresponds to a directory or file that either exists here
+# now or is created by a command the README tells you to run.
+#
+# Layout it covers:
+#   backend/    FastAPI + SQLAlchemy, venv at backend/.venv, pytest
+#   frontend/   Vite + React + vitest, npm
+#   data/       corpus inputs and experiment reports (contents not tracked)
+#   ml/, docs/, scripts/   text only, nothing generated
+
+
+# --- Secrets ----------------------------------------------------------------
+# Three real .env files exist (root, backend/, frontend/) and each has a
+# committed .env.example beside it; scripts/bootstrap.sh copies one to the
+# other. Vite additionally loads mode files -- .env.local, .env.production and
+# so on -- which a plain `.env` rule does not catch, so they are matched
+# explicitly and the examples are allowed back in.
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+
+
+# --- Python (backend/) ------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# backend/.venv is where requirements.txt is installed.
+.venv/
+venv/
+
+# Tool caches. backend/.pytest_cache exists; the others appear the first time
+# anyone runs those tools.
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Coverage output. Not installed today, but `pytest --cov` is one flag away.
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+
+# --- Node / frontend --------------------------------------------------------
+node_modules/
+
+# `npm run build` writes frontend/dist. tsc -b writes its build info into
+# node_modules/.tmp (see tsconfig.app.json), which node_modules/ already
+# covers -- the rule below is insurance in case that path is ever changed.
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Vite caches under node_modules/.vite by default; .vite/ covers a relocated
+# cacheDir. `vitest run --coverage` writes frontend/coverage.
+.vite/
+coverage/
+
+# Vite's convention for local-only files.
+*.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+
+# --- Data -------------------------------------------------------------------
+# Contents are deliberately untracked; the directory structure is kept via
+# .gitkeep so a fresh clone has somewhere to put things.
+#
+#   data/raw/          Gutenberg source texts (~1.4 MB). Reproducible: the
+#                      README gives the exact URLs and ingestion commands.
+#   data/processed/    intermediate artifacts.
+#   data/evaluation/   experiment reports, written only when a script is run
+#                      with --json. Reproducible from the scripts, and their
+#                      conclusions are recorded in docs/architecture.md.
+data/raw/*
+data/processed/*
+data/evaluation/*
+!data/**/.gitkeep
+
+
+# --- Local infrastructure ---------------------------------------------------
+# docker-compose.yml uses named volumes (pgdata, redisdata), so Postgres and
+# Redis data live in Docker rather than in the working tree. Only the
+# override file Compose auto-loads needs ignoring.
+docker-compose.override.yml
+
+
+# --- Editors and OS ---------------------------------------------------------
+.vscode/
+.idea/
+*.sw?
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# --- Logs -------------------------------------------------------------------
+*.log

@@ -1,0 +1,69 @@
+{{Infobox animanga/Print
+| title = Test Manga
+| volumes = 4
+| publisher = [[Test Publisher]]
+}}
+
+'''''Test Manga''''' is a Japanese manga series. This lead paragraph is article
+prose and must never be ingested as volume narrative.
+
+== Plot ==
+A work-level plot section. It describes the whole series in one block and so
+cannot be attached to any single volume; it must be ignored here.
+
+== Publication ==
+The series was serialised between 2005 and 2012. Publication history is not a
+plot summary and must be ignored.
+
+== Volumes ==
+{{Graphic novel list/header
+|Width           = 100%
+|Language        = Japanese
+|SecondLanguage  = English
+}}
+{{Graphic novel list
+|VolumeNumber    = 1
+|OriginalRelDate = July 15, 2005<ref name="kc1">{{cite web|url=https://example.invalid/1|title=Volume 1}}</ref>
+|OriginalISBN    = 978-4-06-363559-1
+|LicensedRelDate = October 13, 2013
+|LicensedISBN    = 978-1-61262-420-9
+|ChapterList     =
+|Summary         = Thorfinn's village receives a returning ship and a man who is
+said to have sailed west to [[Vinland|a land beyond the sea]]. His father reads
+the crew's mood and says nothing of what he recognises.<ref name="kc1" />
+
+By the last chapter the village has been paid a visit it did not invite.
+|LineColor       = 4a6b8a
+}}
+{{Graphic novel list
+|VolumeNumber    = 2
+|OriginalRelDate = November 22, 2005
+|Summary         = A winter crossing goes wrong and the crew put in at a harbour
+they had meant to avoid.<ref name="kc1" /> See also
+[https://example.invalid/ext an external link] which must be reduced to its text.
+}}
+{{Graphic novel list
+|VolumeNumber    = Omnibus 1–3
+|Summary         = A deluxe edition collecting three volumes. Its volume number
+cannot be read as an integer, so it must be skipped rather than renumbered.
+}}
+{{Graphic novel list
+|VolumeNumber    = 3
+|OriginalRelDate = April 21, 2006
+|Summary         =
+}}
+{{Graphic novel list
+|VolumeNumber    = 4
+|OriginalRelDate = August 23, 2006
+|Summary         = The crossing ends where it was always going to end, and the
+debt that opened the first volume is finally named aloud.
+}}
+
+== Reception ==
+Critics praised the series. Reception prose is not narrative and must be ignored.
+
+== References ==
+{{reflist}}
+
+== External links ==
+* [https://example.invalid/series Official site]

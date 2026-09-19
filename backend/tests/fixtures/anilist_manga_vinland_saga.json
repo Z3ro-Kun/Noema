@@ -1,0 +1,403 @@
+{
+  "id": 30642,
+  "idMal": 642,
+  "siteUrl": "https://anilist.co/manga/30642",
+  "title": {
+    "romaji": "Vinland Saga",
+    "english": "Vinland Saga",
+    "native": "ヴィンランド・サガ"
+  },
+  "description": "As a child, Thorfinn sat at the feet of the great Leif Ericson and thrilled to wild tales of a land far to the west. But his youthful fantasies were shattered by a mercenary raid. Raised by the Vikings who murdered his father, Thorfinn became a terrifying warrior, forever seeking to kill the band's leader, Askeladd, and avenge his father. Sustaining Thorfinn through his ordeal are his pride in his family and his dreams of a fertile westward land, a land without war or slavery … the land Leif called Vinland.\n<br><br>\n(Source: Kodansha USA)\n<br><br>\n<i>Notes:<br>\n- Includes the one-shot \"Sayonara ga Chikai no de\" (For Our Farewell Is Near)<br>\n- Includes the one-shot \"Assassin's Creed: Valhalla x Vinland Saga\"<br>\n- Includes two extra chapters.<br>\n- Won the Grand Prize at the Japan Media Arts Festival in 2009.<br>\n- Winner of the 36th Kodansha Manga Award in the General category in 2012.</i>",
+  "format": "MANGA",
+  "status": "FINISHED",
+  "chapters": 224,
+  "volumes": 29,
+  "startDate": {
+    "year": 2005,
+    "month": 4,
+    "day": 27
+  },
+  "endDate": {
+    "year": 2025,
+    "month": 7,
+    "day": 25
+  },
+  "countryOfOrigin": "JP",
+  "source": "ORIGINAL",
+  "genres": [
+    "Action",
+    "Adventure",
+    "Drama"
+  ],
+  "averageScore": 90,
+  "popularity": 138353,
+  "tags": [
+    {
+      "name": "Rehabilitation",
+      "rank": 96,
+      "category": "Theme-Drama",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Historical",
+      "rank": 95,
+      "category": "Setting-Time",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Vikings",
+      "rank": 95,
+      "category": "Cast-Traits",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Coming of Age",
+      "rank": 95,
+      "category": "Theme-Drama",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Foreign",
+      "rank": 93,
+      "category": "Setting-Scene",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Philosophy",
+      "rank": 92,
+      "category": "Theme-Other",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Seinen",
+      "rank": 91,
+      "category": "Demographic",
+      "isGeneralSpoiler": false
+    },
+    {
+      "name": "Male Protagonist",
+      "rank": 91,
+      "category": "Cast-Main Cast",
+      "isGeneralSpoiler": false
+    }
+  ],
+  "staff": {
+    "edges": [
+      {
+        "role": "Story & Art",
+        "node": {
+          "id": 97034,
+          "siteUrl": "https://anilist.co/staff/97034",
+          "name": {
+            "full": "Makoto Yukimura",
+            "native": "幸村誠"
+          }
+        }
+      },
+      {
+        "role": "Lettering (English)",
+        "node": {
+          "id": 214065,
+          "siteUrl": "https://anilist.co/staff/214065",
+          "name": {
+            "full": "Scott Brown",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (Spanish)",
+        "node": {
+          "id": 214718,
+          "siteUrl": "https://anilist.co/staff/214718",
+          "name": {
+            "full": "Marc Bernabé",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (English)",
+        "node": {
+          "id": 218470,
+          "siteUrl": "https://anilist.co/staff/218470",
+          "name": {
+            "full": "Stephen Paul",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Lettering (Italian)",
+        "node": {
+          "id": 219572,
+          "siteUrl": "https://anilist.co/staff/219572",
+          "name": {
+            "full": "Christian Biscaro",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (French)",
+        "node": {
+          "id": 219573,
+          "siteUrl": "https://anilist.co/staff/219573",
+          "name": {
+            "full": "Xavière Daumarie",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (Italian)",
+        "node": {
+          "id": 219574,
+          "siteUrl": "https://anilist.co/staff/219574",
+          "name": {
+            "full": "Edoardo Serino",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Editing (Portuguese: Vol 24-)",
+        "node": {
+          "id": 220700,
+          "siteUrl": "https://anilist.co/staff/220700",
+          "name": {
+            "full": "Beatriz Poszar",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (Portuguese)",
+        "node": {
+          "id": 220701,
+          "siteUrl": "https://anilist.co/staff/220701",
+          "name": {
+            "full": "Lídia Ivasa",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Editing (Portuguese: Vol 21)",
+        "node": {
+          "id": 220716,
+          "siteUrl": "https://anilist.co/staff/220716",
+          "name": {
+            "full": "Beth Kodama",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Editing",
+        "node": {
+          "id": 296221,
+          "siteUrl": "https://anilist.co/staff/296221",
+          "name": {
+            "full": "Jules Kollisch",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (German)",
+        "node": {
+          "id": 311139,
+          "siteUrl": "https://anilist.co/staff/311139",
+          "name": {
+            "full": "Hirofumi Yamada",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Translator (Chinese)",
+        "node": {
+          "id": 320179,
+          "siteUrl": "https://anilist.co/staff/320179",
+          "name": {
+            "full": "Yifeng Zhang",
+            "native": "張益豐"
+          }
+        }
+      },
+      {
+        "role": "Editing (Portuguese: Vol 1-18)",
+        "node": {
+          "id": 328735,
+          "siteUrl": "https://anilist.co/staff/328735",
+          "name": {
+            "full": "Bruno Zago",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Editing (Portuguese: Vol 22-23)",
+        "node": {
+          "id": 331323,
+          "siteUrl": "https://anilist.co/staff/331323",
+          "name": {
+            "full": "Diógenes Dih",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Editing (Portuguese: Vol 19-20)",
+        "node": {
+          "id": 369556,
+          "siteUrl": "https://anilist.co/staff/369556",
+          "name": {
+            "full": "Camila Cysneiros",
+            "native": null
+          }
+        }
+      },
+      {
+        "role": "Lettering (Portuguese: vol 19)",
+        "node": {
+          "id": 401323,
+          "siteUrl": "https://anilist.co/staff/401323",
+          "name": {
+            "full": "Vinicius Azevedo",
+            "native": null
+          }
+        }
+      }
+    ]
+  },
+  "characters": {
+    "edges": [
+      {
+        "role": "MAIN",
+        "node": {
+          "id": 10138,
+          "siteUrl": "https://anilist.co/character/10138",
+          "name": {
+            "full": "Thorfinn Karlsefni",
+            "native": "トルフィン・カルルセヴニ"
+          },
+          "description": "__Birthyear:__ 996\n__Height:__ 100 cm (6-7 years old), 153 cm (16-18 years old), 155 cm (19 years old)\n\nThorfinn is a courageous young man armed with two twin blades he inherited from his deceased [father](https://anilist.co/character/13021). He's traveling with [Askeladd](https://anilist.co/character/13020), who is the leader of a ruthless group of mercenaries who take jobs from whoever they think can offer them a reasonable reward. Besides, Askeladd is the man who killed Thorfinn's father, Thors, and the only reason Thorfinn is traveling with Askeladd is so he can defeat him in a duel and win back his father's pride. Thorfinn only wants to win his father's pride with a fair duel. Askeladd only agrees to these duels when Thorfinn completes a certain task (like bringing him the head of the opposing armies general on the battlefield).  He does not fight for the love of battle, but is still prone to losing his composure when in combat. This hotheadedness often costs him battles against more experienced opponents."
+        }
+      },
+      {
+        "role": "SUPPORTING",
+        "node": {
+          "id": 82537,
+          "siteUrl": "https://anilist.co/character/82537",
+          "name": {
+            "full": "Floki",
+            "native": "フローキ"
+          },
+          "description": "A Jomsviking commander whom contracted [Askeladd](https://anilist.co/character/13020) to assassinate [Thors](https://anilist.co/character/13021), Floki's former comrade.\n"
+        }
+      },
+      {
+        "role": "SUPPORTING",
+        "node": {
+          "id": 89269,
+          "siteUrl": "https://anilist.co/character/89269",
+          "name": {
+            "full": "Hild",
+            "native": "ヒルド"
+          },
+          "description": "An engineering genius from a young age. ~!Hild seeks revenge against Thorfinn after the death of her father.!~"
+        }
+      },
+      {
+        "role": "SUPPORTING",
+        "node": {
+          "id": 148022,
+          "siteUrl": "https://anilist.co/character/148022",
+          "name": {
+            "full": "Sigurd",
+            "native": "シグルド"
+          },
+          "description": "[Halfdan](https://anilist.co/character/140356/Halfdan)'s Son, and [Gudrid](https://anilist.co/character/89270/Gudrid)'s previous husband."
+        }
+      }
+    ]
+  },
+  "relations": {
+    "edges": [
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 101348,
+          "type": "ANIME",
+          "format": "TV",
+          "title": {
+            "romaji": "VINLAND SAGA",
+            "english": "Vinland Saga"
+          }
+        }
+      },
+      {
+        "relationType": "SPIN_OFF",
+        "node": {
+          "id": 52527,
+          "type": "MANGA",
+          "format": "MANGA",
+          "title": {
+            "romaji": "Ganso Ylva-chan",
+            "english": null
+          }
+        }
+      },
+      {
+        "relationType": "ADAPTATION",
+        "node": {
+          "id": 136430,
+          "type": "ANIME",
+          "format": "TV",
+          "title": {
+            "romaji": "VINLAND SAGA SEASON 2",
+            "english": "Vinland Saga Season 2"
+          }
+        }
+      },
+      {
+        "relationType": "SPIN_OFF",
+        "node": {
+          "id": 162262,
+          "type": "MANGA",
+          "format": "MANGA",
+          "title": {
+            "romaji": "Animalland Saga",
+            "english": "Animalland Saga"
+          }
+        }
+      },
+      {
+        "relationType": "SPIN_OFF",
+        "node": {
+          "id": 162267,
+          "type": "MANGA",
+          "format": "MANGA",
+          "title": {
+            "romaji": "Animalland Saga season 2",
+            "english": "Animalland Saga season 2"
+          }
+        }
+      },
+      {
+        "relationType": "OTHER",
+        "node": {
+          "id": 34307,
+          "type": "MANGA",
+          "format": "ONE_SHOT",
+          "title": {
+            "romaji": "Sayonara ga Chikai no de",
+            "english": "For Our Farewell Is Near"
+          }
+        }
+      }
+    ]
+  }
+}
