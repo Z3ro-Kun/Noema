@@ -409,10 +409,20 @@ async def test_case_m_does_not_suppress_a_common_concept(
 async def test_case_n_turns_one_rating_into_no_patterns(
     db_session: AsyncSession, evaluation
 ) -> None:
-    """Eighteen concepts on one work offer 153 pairs and must yield none."""
+    """A work carrying many concepts offers many pairs and must yield none.
+
+    The count is derived from the work rather than written down. It used to
+    be the literal 153, from the eighteen concepts the work carried at the
+    time; the Phase 1AG concept audit removed one of those eighteen as an
+    over-broad alias and the literal became a false failure -- the invariant
+    under test held perfectly well at 136. What matters is that *many* pairs
+    are on offer and that none of them is admitted.
+    """
     taste = await profile_for(db_session, evaluation, "N")
 
-    assert taste.diagnostics.pairs_considered == 153
+    features = taste.diagnostics.features_available
+    assert taste.diagnostics.pairs_considered == features * (features - 1) // 2
+    assert taste.diagnostics.pairs_considered > 100, "the case still offers many pairs"
     assert taste.diagnostics.pairs_admitted == 0
     assert taste.combinations() == []
     # The only feature with two rated works behind it, and only emerging.

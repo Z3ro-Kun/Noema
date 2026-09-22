@@ -148,10 +148,18 @@ function mockApi(library: unknown[] = []) {
       // status cannot be handed the whole library and look correct.
       const params = new URL(url, 'http://localhost').searchParams
       const status = params.get('status')
+      const domain = params.get('domain')
       const includeRemoved = params.get('include_removed') === 'true'
       let items = library as Entry[]
       if (!includeRemoved) items = held(items)
       if (status) items = items.filter((entry) => entry.user_state?.status === status)
+      // The server filters on both; a client that filtered on neither would
+      // otherwise look correct here.
+      if (domain) {
+        items = items.filter(
+          (entry) => (entry as { work?: { domain_slug?: string } }).work?.domain_slug === domain,
+        )
+      }
       const size = Number(params.get('page_size') ?? 24)
       return json({
         items: items.slice(0, size),
@@ -803,6 +811,109 @@ describe('Library status organisation', () => {
       const headers = Object.fromEntries([...(sent ?? new Headers())])
       expect(headers.authorization).toBe('Bearer test-token-abc')
     }
+  })
+
+  // --- narrowing by medium --------------------------------------------------
+
+  it('asks the server to narrow by medium', async () => {
+    const user = userEvent.setup()
+    const { fetchMock, calls } = mockApi(MIXED)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await screen.findByRole('heading', { name: 'Reading & watching' })
+
+    await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes('domain=anime'))).toBe(true),
+    )
+    // Server-side: nothing downloads the whole library to hide part of it.
+    const listings = calls.filter(
+      (call) => call.url.includes('/api/v1/library') && !call.url.includes('/summary'),
+    )
+    expect(listings.length).toBeGreaterThan(0)
+  })
+
+  it('combines medium with status in one request', async () => {
+    const user = userEvent.setup()
+    const { fetchMock, calls } = mockApi(MIXED)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await screen.findByRole('heading', { name: 'Reading & watching' })
+
+    await user.selectOptions(screen.getByLabelText('Medium'), 'literature')
+    await user.click(await screen.findByRole('tab', { name: /Completed/ }))
+
+    await waitFor(() => {
+      const combined = calls.filter(
+        (call) =>
+          call.url.includes('status=completed') && call.url.includes('domain=literature'),
+      )
+      expect(combined.length).toBeGreaterThan(0)
+    })
+  })
+
+  it('returns to the first page when the medium changes', async () => {
+    const user = userEvent.setup()
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      work: { ...FRANKENSTEIN, id: `work-${index}` },
+      user_state: interaction({ status: 'completed' }).user_state,
+    }))
+    const { fetchMock, calls } = mockApi(many)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await user.click(await screen.findByRole('tab', { name: /Completed/ }))
+    await screen.findByRole('heading', { name: 'Completed' })
+    await user.click(await screen.findByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(calls.some((call) => call.url.includes('page=2'))).toBe(true))
+
+    await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
+
+    // Page three of the old filter is not a page of the new one.
+    await waitFor(() => {
+      const latest = [...calls]
+        .reverse()
+        .find((call) => call.url.includes('domain=anime'))
+      expect(latest?.url).not.toContain('page=2')
+    })
+  })
+
+  it('offers a way back to every medium once narrowed', async () => {
+    const user = userEvent.setup()
+    const { fetchMock, calls } = mockApi(MIXED)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await screen.findByRole('heading', { name: 'Reading & watching' })
+
+    await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
+    await user.click(await screen.findByRole('button', { name: 'Show all media' }))
+
+    await waitFor(() => {
+      const latest = [...calls]
+        .reverse()
+        .find((call) => call.url.includes('/api/v1/library') && !call.url.includes('/summary'))
+      expect(latest?.url).not.toContain('domain=')
+    })
+  })
+
+  it('sends no medium at all until one is chosen', async () => {
+    const { fetchMock, calls } = mockApi(MIXED)
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
+    await authenticate(user)
+    await screen.findByRole('heading', { name: 'Reading & watching' })
+
+    expect(calls.every((call) => !call.url.includes('domain='))).toBe(true)
   })
 
   it('asks for active entries only, never removed ones', async () => {

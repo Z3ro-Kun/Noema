@@ -1,5 +1,5 @@
 import { apiPost } from './client'
-import type { SemanticSearchResponse } from '../types/api'
+import type { SemanticSearchResponse, WorkSearchResponse } from '../types/api'
 
 /**
  * Meaning-oriented retrieval over the embedded corpus.
@@ -25,6 +25,24 @@ export function semanticSearch(
   params: SemanticSearchParams,
 ): Promise<SemanticSearchResponse> {
   return apiPost<SemanticSearchResponse>('/api/v1/search/semantic', {
+    query: params.query,
+    top_k: params.top_k ?? 10,
+    domain: params.domain ?? null,
+    text_tier: params.text_tier ?? null,
+    representation: params.representation ?? 'content_unit',
+  })
+}
+
+/**
+ * The same search, answered in works.
+ *
+ * The product surface. `semanticSearch` above returns the raw passages the
+ * vectors matched and backs the retrieval-inspection page; this returns the
+ * works those passages belong to, so a novel that matches in four places is
+ * one result rather than four. `top_k` means unique works.
+ */
+export function workSearch(params: SemanticSearchParams): Promise<WorkSearchResponse> {
+  return apiPost<WorkSearchResponse>('/api/v1/search/works', {
     query: params.query,
     top_k: params.top_k ?? 10,
     domain: params.domain ?? null,

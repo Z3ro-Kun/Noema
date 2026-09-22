@@ -258,8 +258,20 @@ export default function Preferences({ onBack, onSignIn }: PreferencesProps) {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="flex flex-wrap items-center gap-4 border-b border-slate-800 px-6 py-4">
         <div>
+          {/*
+            The evidence layer as it actually is, for inspecting the engine.
+            Your Taste is the reader-facing view of the same data; this one
+            keeps the precise vocabulary because vagueness here would defeat
+            its purpose.
+          */}
+          <p className="mb-2 inline-block border border-slate-700 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">
+            Development surface
+          </p>
           <h1 className="text-xl font-semibold tracking-tight">Your preference evidence</h1>
-          <p className="text-sm text-slate-400">What your ratings show about media concepts</p>
+          <p className="text-sm text-slate-400">
+            What your ratings show about media concepts. The reader-facing view of
+            this is Your Taste.
+          </p>
         </div>
         <button
           type="button"

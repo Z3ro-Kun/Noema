@@ -4,6 +4,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from tests.test_models import EXPECTED_TABLES
@@ -397,4 +398,198 @@ def test_content_concepts_was_left_untouched_by_the_work_concept_migration(
             "created_at",
         }
     finally:
+        engine.dispose()
+
+
+def test_a_content_unit_has_exactly_one_parent(database_available: bool) -> None:
+    """Migration 0012's rule, checked on the real schema.
+
+    A unit hangs off a container or off a work. Both would make "which work
+    is this?" have two answers; neither would make it have none. The database
+    enforces it rather than the application, because every retrieval query
+    resolves that question by joining.
+    """
+    if not database_available:
+        pytest.skip("requires a live Postgres instance (docker compose up db)")
+
+    alembic_cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+    command.upgrade(alembic_cfg, "head")
+
+    engine = create_engine(get_settings().sync_database_url)
+    try:
+        inspector = inspect(engine)
+        columns = {c["name"]: c for c in inspector.get_columns("content_units")}
+
+        # Both nullable, so either can be the parent...
+        assert columns["container_id"]["nullable"] is True
+        assert columns["work_id"]["nullable"] is True
+        # ...and the constraint is what makes it exactly one.
+        checks = {c["name"] for c in inspector.get_check_constraints("content_units")}
+        assert "ck_content_unit_single_parent" in checks
+
+        referred = {
+            fk["referred_table"]: fk["constrained_columns"]
+            for fk in inspector.get_foreign_keys("content_units")
+        }
+        assert referred["containers"] == ["container_id"]
+        assert referred["works"] == ["work_id"]
+
+        with engine.connect() as connection:
+            for container_id, work_id in (
+                ("(SELECT id FROM containers LIMIT 1)", "(SELECT id FROM works LIMIT 1)"),
+                ("NULL", "NULL"),
+            ):
+                with pytest.raises(IntegrityError):
+                    with connection.begin_nested():
+                        connection.execute(
+                            text(
+                                "INSERT INTO content_units "
+                                "(id, container_id, work_id, unit_type, sequence_number, "
+                                " text_tier) VALUES "
+                                f"(gen_random_uuid(), {container_id}, {work_id}, "
+                                "'synopsis', 1, 'summary')"
+                            )
+                        )
+            connection.rollback()
+    finally:
+        engine.dispose()
+
+
+def test_a_clean_database_reaches_the_release_revision(database_available: bool) -> None:
+    """The release gate for a new deployment: empty schema -> 0013, twice.
+
+    The test above proves the chain builds a schema from nothing. This one
+    asks the questions a first production deploy asks instead: does it land on
+    the revision the release is cut at, is running it again a no-op rather
+    than an error, is pgvector actually present, and did the structural
+    guarantees the application relies on -- indexes, foreign keys, check and
+    unique constraints -- come with it.
+
+    Same isolation as above: a temporary schema, because the application role
+    cannot CREATE DATABASE. The development database is never touched.
+    """
+    if not database_available:
+        pytest.skip("requires a live Postgres instance (docker compose up db)")
+
+    schema = "migration_release_check"
+    alembic_cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+    alembic_cfg.attributes["version_table_schema"] = schema
+
+    engine = create_engine(get_settings().sync_database_url)
+
+    def migrate() -> None:
+        with engine.connect() as connection:
+            connection.execute(text(f"SET search_path TO {schema}, public"))
+            alembic_cfg.attributes["connection"] = connection
+            command.upgrade(alembic_cfg, "head")
+            connection.commit()
+
+    def scalar(statement: str):
+        with engine.connect() as connection:
+            connection.execute(text(f"SET search_path TO {schema}, public"))
+            return connection.execute(text(statement)).scalar_one()
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+            connection.execute(text(f"CREATE SCHEMA {schema}"))
+            connection.commit()
+
+        migrate()
+
+        # --- the revision this release is cut at ----------------------
+        assert scalar("SELECT version_num FROM alembic_version") == "0013"
+
+        # --- idempotent: a redeploy re-runs this command --------------
+        migrate()
+        assert scalar("SELECT version_num FROM alembic_version") == "0013"
+
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names(schema=schema))
+
+        # --- every table the application opens ------------------------
+        assert EXPECTED_TABLES <= tables
+        assert "user_recommendation_feedback" in tables
+
+        # --- pgvector, and a column that actually uses it -------------
+        assert scalar(
+            "SELECT count(*) FROM pg_extension WHERE extname = 'vector'"
+        ) == 1
+        vector_columns = scalar(
+            "SELECT count(*) FROM information_schema.columns "
+            f"WHERE table_schema = '{schema}' AND udt_name = 'vector'"
+        )
+        assert vector_columns >= 1, "no column uses the vector type"
+
+        # --- foreign keys, on the tables whose integrity depends on them
+        for table, referred in (
+            ("user_content_interactions", {"users", "works"}),
+            ("user_recommendation_feedback", {"users", "works"}),
+            ("user_preference_feedback", {"users", "concepts"}),
+            ("work_concepts", {"works", "concepts"}),
+            ("content_units", {"containers", "works", "text_sources"}),
+        ):
+            actual = {
+                fk["referred_table"]
+                for fk in inspector.get_foreign_keys(table, schema=schema)
+            }
+            assert referred <= actual, f"{table} lost a foreign key: {referred - actual}"
+
+        # --- the uniqueness the product's semantics rest on -----------
+        for table, constraint in (
+            ("user_content_interactions", "uq_user_content_interaction"),
+            ("user_recommendation_feedback", "uq_user_recommendation_feedback"),
+            ("user_preference_feedback", "uq_user_preference_feedback"),
+            ("work_concepts", "uq_work_concept"),
+        ):
+            names = {
+                item["name"]
+                for item in inspector.get_unique_constraints(table, schema=schema)
+            }
+            assert constraint in names, f"{table} lost {constraint}"
+
+        # --- the checks that keep a vocabulary closed -----------------
+        for table, constraint in (
+            ("content_units", "ck_content_unit_text_tier"),
+            ("content_units", "ck_content_unit_single_parent"),
+            ("user_recommendation_feedback", "ck_user_recommendation_feedback_action"),
+            ("user_content_interactions", "ck_user_content_interaction_status"),
+            ("user_content_interactions", "ck_user_content_interaction_rating"),
+        ):
+            names = {
+                item["name"]
+                for item in inspector.get_check_constraints(table, schema=schema)
+            }
+            assert constraint in names, f"{table} lost {constraint}"
+
+        # --- the indexes every hot query depends on -------------------
+        for table, column in (
+            ("user_content_interactions", "user_id"),
+            ("user_recommendation_feedback", "user_id"),
+            ("work_concepts", "work_id"),
+            ("work_concepts", "concept_id"),
+            ("content_units", "container_id"),
+            ("content_units", "work_id"),
+            ("embeddings", "owner_id"),
+        ):
+            indexed = {
+                tuple(index["column_names"])
+                for index in inspector.get_indexes(table, schema=schema)
+            }
+            covered = any(columns and columns[0] == column for columns in indexed)
+            assert covered, f"{table}.{column} is not indexed"
+
+        # --- a fresh deployment starts with no user data --------------
+        for table in ("users", "user_sessions", "user_content_interactions",
+                      "user_recommendation_feedback", "user_preference_feedback"):
+            assert scalar(f"SELECT count(*) FROM {table}") == 0
+
+        # --- and with the reference data the ingestion contract needs -
+        assert scalar("SELECT count(*) FROM domains") == 3
+    finally:
+        with engine.connect() as connection:
+            connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+            connection.commit()
         engine.dispose()

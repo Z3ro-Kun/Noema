@@ -67,10 +67,21 @@ export default function SemanticSearch({ onBack }: SemanticSearchProps) {
         >
           &larr; All works
         </button>
+        {/*
+          Deliberately technical, and deliberately labelled. This is the
+          retrieval-inspection surface: renaming its vocabulary would make it
+          useless for the one job it has. The banner is what keeps a reader
+          who arrives here from mistaking it for the product -- Discover's
+          "Search by theme" is the same retrieval, said for a reader.
+        */}
+        <p className="mb-2 inline-block border border-slate-700 px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">
+          Development surface
+        </p>
         <h1 className="text-xl font-semibold tracking-tight">Semantic search</h1>
         <p className="text-sm text-slate-400">
           Vector similarity over embedded text. Results are computational observations, not
-          stated relationships.
+          stated relationships. The reader-facing version of this is “Search by
+          theme” in Discover.
         </p>
       </header>
 
@@ -168,7 +179,12 @@ export default function SemanticSearch({ onBack }: SemanticSearchProps) {
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="font-medium text-slate-200">{hit.work_title}</span>
                     <span className="text-slate-500">
-                      {hit.container_title ?? hit.container_type} {hit.container_sequence_number}
+                      {/* A work-level unit sits in no container: it describes
+                          the whole work, and inventing a number for it would
+                          be a claim the source never made. */}
+                      {hit.container_id === null
+                        ? 'whole work'
+                        : `${hit.container_title ?? hit.container_type} ${hit.container_sequence_number}`}
                     </span>
                     <span className="rounded bg-slate-800 px-2 py-0.5 uppercase tracking-wide text-slate-400">
                       {hit.domain_slug}

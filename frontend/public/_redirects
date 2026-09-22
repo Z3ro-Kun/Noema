@@ -1,0 +1,8 @@
+# Single-page app: every address is served by index.html and routed in the
+# browser. Without this, a direct visit to /works/<id> or a refresh on /taste
+# asks the static host for a file that does not exist and gets a 404.
+#
+# Read by Netlify and Cloudflare Pages. Vercel uses vercel.json beside it;
+# other hosts want the same rule in their own words (nginx: try_files
+# $uri /index.html).
+/*    /index.html   200

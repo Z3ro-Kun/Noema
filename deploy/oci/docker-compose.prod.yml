@@ -1,0 +1,146 @@
+# Noema in production, on one OCI Compute instance.
+#
+# Deliberately not the repository's `docker-compose.yml`, which bind-mounts
+# ./backend over the image so an edit is picked up without a rebuild. That is
+# right for a laptop and wrong here: the image would be shadowed by whatever
+# happens to be checked out, and the thing running would stop being the thing
+# that was built.
+#
+#     docker compose -f deploy/oci/docker-compose.prod.yml --env-file deploy/oci/.env.production up -d
+#
+# Run it from the repository root on the instance. See README.md beside this
+# file for the whole sequence, including the steps this file cannot do:
+# migrations and corpus initialization are one-off commands, never startup.
+#
+# The network boundary is here, not only in OCI's security list. Caddy is the
+# only service that publishes a port. Postgres and Redis are reachable on the
+# compose network by service name and have no host port at all, so they are
+# unreachable from the internet even if the security list is wrong.
+
+name: noema
+
+x-backend-env: &backend-env
+  ENVIRONMENT: production
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  SYNC_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  REDIS_URL: redis://redis:6379/0
+  CORS_ORIGINS: https://${NOEMA_DOMAIN}
+
+services:
+  # --- the only service with a public port ---------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    environment:
+      NOEMA_DOMAIN: ${NOEMA_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The built frontend. Produced by `scripts/build-frontend.sh`, not by
+      # this file -- a static bundle is a build artifact, not a service.
+      - ../../frontend/dist:/srv/www:ro
+      - caddy_data:/data        # certificates and ACME account. Losing this
+      - caddy_config:/config    # means re-issuing, and Let's Encrypt rate-limits.
+    depends_on:
+      api:
+        condition: service_started
+
+  # --- the application -----------------------------------------------------
+  api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    image: noema-api:${NOEMA_VERSION:-dev}
+    restart: unless-stopped
+    environment: *backend-env
+    # No `ports:`. Caddy reaches it at api:8000 on the compose network; the
+    # host never listens on 8000, so nothing can reach it directly.
+    #
+    # One uvicorn worker, on purpose. Each worker process loads its own copy
+    # of all-mpnet-base-v2 on the first theme search (~700 MB resident), so
+    # --workers 2 doubles the memory for no benefit at this traffic level.
+    # The image's default CMD already does this; it is repeated here because
+    # the reason matters more than the default.
+    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]
+    volumes:
+      # Only so the one-off corpus commands share it. `seed_corpus` downloads
+      # Gutenberg texts into data/raw/, and a `run --rm` container throws them
+      # away -- which makes an interrupted seed re-download everything instead
+      # of resuming. The serving API never writes here.
+      - corpusdata:/app/data
+    healthcheck:
+      # python rather than curl: the slim image has no curl, and adding one
+      # for a health check is a package more than the job needs. `degraded`
+      # still answers 200, which is correct -- Redis being down is not the
+      # API being down.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../../backend
+      dockerfile: worker/Dockerfile
+    image: noema-worker:${NOEMA_VERSION:-dev}
+    restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      - corpusdata:/app/data
+    # No ports, no health check: an RQ worker has no listener to check. That
+    # it is alive is `docker compose ps`; that it is connected is its log.
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # --- state ---------------------------------------------------------------
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Append-only persistence. RQ holds queued jobs in Redis, and corpus
+    # embedding is the only thing that queues any -- losing the queue on a
+    # restart would mean re-running an idempotent script, not losing data.
+    # Kept on anyway because it costs nothing at this size.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
+  corpusdata:
+  caddy_data:
+  caddy_config:

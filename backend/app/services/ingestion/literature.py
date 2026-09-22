@@ -67,15 +67,32 @@ def _flatten_paragraph(block: str) -> str:
     return " ".join(line.strip() for line in block.splitlines() if line.strip())
 
 
+# A chapter title is a line, not a page. Past this, whatever was matched is
+# not a title -- in practice it is a table of contents whose first line
+# happens to read "Chapter I.", which the heading pattern cannot tell from a
+# real chapter opening. Great Expectations is the case that found this: its
+# contents block produced a 700-character "title" and the ingest failed on
+# the column bound.
+_MAX_TITLE_CHARS = 200
+
+
 def _heading_title(block: str) -> str | None:
-    """Chapter title from a heading block: same-line remainder, else the rest."""
+    """Chapter title from a heading block: same-line remainder, else the rest.
+
+    Returns None when what was found is too long to be a title. The container
+    keeps its heading and simply has no title, which is the same absence a
+    chapter with no title after its number already produces -- better than
+    storing a truncated table of contents and calling it the chapter's name.
+    """
     lines = [line.strip() for line in block.splitlines() if line.strip()]
     match = _HEADING_RE.match(lines[0])
     rest_of_line = (match.group("rest") or "").strip() if match else ""
     if rest_of_line:
-        return rest_of_line
+        return rest_of_line if len(rest_of_line) <= _MAX_TITLE_CHARS else None
     remaining = " ".join(lines[1:]).strip()
-    return remaining or None
+    if not remaining or len(remaining) > _MAX_TITLE_CHARS:
+        return None
+    return remaining
 
 
 def _is_heading(block: str) -> bool:

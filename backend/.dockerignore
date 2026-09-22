@@ -1,0 +1,54 @@
+# What must not reach a built image.
+#
+# Both Dockerfiles end in `COPY . .` from this directory. Without this file
+# that copy includes `backend/.env` -- a real file on a developer's machine,
+# holding real local credentials -- and bakes it into a published image, where
+# it would also override the deployment's own environment at runtime. It also
+# includes `.venv/`, which is gigabytes of Linux-incompatible wheels the image
+# does not use.
+#
+# Deny nothing broadly and allow back: the list is short and explicit, so a
+# new directory is copied by default rather than silently dropped from the
+# image.
+
+# --- secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- the host's virtualenv -------------------------------------------------
+# Built for the developer's OS and Python, never the image's.
+.venv/
+venv/
+
+# --- Python build and tool output ------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- the test suite --------------------------------------------------------
+# 1393 tests, their fixtures, and the evaluation datasets. They are run in CI
+# and on a laptop; a serving image has no use for them and the fixtures
+# include reader profiles that a production image should not carry.
+tests/
+pytest.ini
+
+# --- corpus inputs ---------------------------------------------------------
+# Downloaded by `scripts.seed_corpus` at initialization time, into the target
+# database rather than into the image.
+data/
+
+# --- editors and OS --------------------------------------------------------
+.vscode/
+.idea/
+*.sw?
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

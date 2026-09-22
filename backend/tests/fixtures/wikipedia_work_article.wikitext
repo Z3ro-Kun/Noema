@@ -1,0 +1,42 @@
+{{Infobox comic
+| title = Test Tower
+| genre = [[Fantasy]], [[Action fiction|action]]
+| publisher = A publisher
+}}
+
+'''''Test Tower''''' is a South Korean [[webtoon]] written and illustrated by a
+creator. It has been serialised since 2010 and the infobox above is article
+furniture that no summary should ever contain.
+
+== Synopsis ==
+A boy who has spent his whole life beneath the tower follows the one person he
+cares about through its door, and finds a place that measures everyone who
+enters it. Each floor sets a test, and each test asks for something different:
+strength on one, trust on another, and on the worst of them a willingness to
+spend other people to get higher.<ref name="review">A citation that must not
+appear in the summary.</ref>
+
+He climbs anyway, because the person he followed is somewhere above him, and
+the tower has never once been generous about telling him how far.
+
+=== Premise ===
+The tower grants whoever reaches its top whatever they want, which is the
+promise that keeps the floors full of people willing to be measured. Nobody
+who has reached the top has come back down to say whether the promise is kept.
+
+=== Characters ===
+* A boy, the protagonist, whose name is a character-list entry and not narrative.
+* A guide, who administers the tests on the lower floors.
+
+== Production ==
+The series was announced in 2010 and drawn weekly. Production notes are not a
+plot summary and must never be treated as one.
+
+== Reception ==
+Critics praised the series. Reception prose is not narrative either.
+
+== References ==
+{{Reflist}}
+
+== External links ==
+* [https://example.com Official site]

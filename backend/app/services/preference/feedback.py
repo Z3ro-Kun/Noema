@@ -54,12 +54,13 @@ today: there is no stable answer to record it against.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core import clock
 from app.models import (
     FEEDBACK_SURFACES,
     FEEDBACK_TYPES,
@@ -88,7 +89,11 @@ class InvalidSurfaceError(FeedbackError):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    """The event clock: strictly increasing, so history is a sequence.
+
+    Not `datetime.now()`. See `app.core.clock`.
+    """
+    return clock.now()
 
 
 async def _concept_by_slug(session: AsyncSession, slug: str) -> Concept | None:
@@ -162,7 +167,15 @@ async def record_feedback(
         feedback.feedback_type = feedback_type
         feedback.source_surface = source_surface
         feedback.submission_count += 1
-        feedback.updated_at = now
+        # Strictly later than what the row already holds, and never merely
+        # equal to it. An equal assignment reads as *unchanged* to the ORM,
+        # which then lets the column's server-side `onupdate` write the value
+        # instead -- and a server-written value leaves the attribute expired,
+        # so the caller projecting this row would lazy-load it on an async
+        # session and fail. The event clock makes this true on its own within
+        # a process; saying it here makes the row's own invariant hold
+        # regardless of which process last wrote it.
+        feedback.updated_at = max(now, feedback.updated_at + clock.TICK)
 
     session.add(
         UserPreferenceFeedbackEvent(

@@ -5,12 +5,14 @@ import SectionHeading from '../components/SectionHeading'
 import StateMessage from '../components/StateMessage'
 import WorkEntry from '../components/WorkEntry'
 import { fetchDiscoveryFacets, fetchWorks } from '../api/catalog'
-import { semanticSearch } from '../api/search'
+import { workSearch } from '../api/search'
+import { DEV_SURFACES } from '../lib/config'
 import { activityLine } from '../lib/labels'
 import type {
   DiscoveryFacets,
-  SemanticSearchResponse,
   WorkListResponse,
+  WorkSearchHit,
+  WorkSearchResponse,
 } from '../types/api'
 
 /**
@@ -69,9 +71,15 @@ import type {
  * and a work's description belongs on the work's own page. `WorkCard` still
  * exists and is untouched -- Library and WorkPage use it.
  *
- * Semantic results stay text-first. A hit is a *passage*, not a work, and
- * `SearchHit` carries no cover; dressing passages up as posters would both
- * misrepresent the result and cost a fetch per hit.
+ * Meaning results are works, like everything else here. The retrieval is
+ * still passage-level -- that is what the vectors index -- but a novel that
+ * matches in four places was arriving as four results, which is a list of
+ * paragraphs rather than a list of works. The server folds the passages into
+ * the works they came from and `top_k` counts works; the raw passages are
+ * still available on the retrieval-inspection surface, which is where they
+ * belong. Each result carries the one passage that scored highest, kept
+ * short and behind a disclosure: enough to answer "why did this appear",
+ * nowhere near enough to read the corpus from.
  */
 
 const PAGE_SIZE = 12
@@ -98,10 +106,10 @@ const MODES: {
   },
   {
     value: 'meaning',
-    label: 'By meaning',
-    eyebrow: 'By passage',
+    label: 'By theme',
+    eyebrow: 'By what happens',
     description:
-      'Looks for passages that mean something similar, using Noema’s embeddings. Results are text similarity, not a recommendation.',
+      'Looks for writing that reads like what you describe. It is a way of finding things, not a recommendation — everyone describing the same thing sees the same works.',
     inputLabel: 'Describe a theme',
     placeholder: 'Describe a theme or situation…',
   },
@@ -167,6 +175,53 @@ function corpusLine(facets: DiscoveryFacets | null): string | null {
   return `${works} ${works === 1 ? 'work' : 'works'} across ${inWords(media)} ${
     media === 1 ? 'medium' : 'media'
   }`
+}
+
+/**
+ * Why one work came back from a meaning search.
+ *
+ * The similarity, then -- only if asked -- where the strongest passage sits
+ * and a short quotation from it. Compact and secondary on purpose: the
+ * result is the work, and a list that printed passages would be a reading
+ * interface for a corpus Noema does not redistribute.
+ *
+ * The tier is always stated. A match against a third-party summary is not a
+ * match against the work's own words.
+ */
+function SemanticEvidence({ hit }: { hit: WorkSearchHit }) {
+  const { evidence } = hit
+  const where = [
+    // No container means the passage describes the whole work, so say that
+    // rather than printing a chapter number the source never gave us.
+    evidence.container_id === null
+      ? 'across the whole work'
+      : (evidence.container_title ??
+        `${evidence.container_type} ${evidence.container_sequence_number}`),
+    evidence.text_tier === 'summary'
+      ? `from a ${evidence.source_name ?? 'third-party'} summary`
+      : 'from the work itself',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <details>
+      <summary className="cursor-pointer text-[0.62rem] uppercase tracking-label text-paper-faint transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+        Why it appeared
+      </summary>
+      <div className="mt-3 border-l border-paper/10 pl-4">
+        <p className="text-[0.62rem] uppercase tracking-label text-paper-faint">{where}</p>
+        <p className="mt-2 font-display text-[0.95rem] font-light italic leading-relaxed text-paper-dim">
+          {evidence.excerpt}
+        </p>
+        {evidence.matching_passages > 1 && (
+          <p className="mt-2 text-[0.62rem] uppercase tracking-label text-paper-faint">
+            {evidence.matching_passages} passages matched
+          </p>
+        )}
+      </div>
+    </details>
+  )
 }
 
 /** A labelled `<select>` built from a facet, hidden when nothing is behind it. */
@@ -248,7 +303,7 @@ export default function Discover({
 
   const [facets, setFacets] = useState<DiscoveryFacets | null>(null)
   const [results, setResults] = useState<WorkListResponse | null>(null)
-  const [semantic, setSemantic] = useState<SemanticSearchResponse | null>(null)
+  const [semantic, setSemantic] = useState<WorkSearchResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -294,8 +349,10 @@ export default function Discover({
     setLoading(true)
     try {
       setSemantic(
-        await semanticSearch({
+        await workSearch({
           query,
+          // Unique works, not raw passages: the server widens the candidate
+          // pool itself to make that possible.
           top_k: SEMANTIC_TOP_K,
           domain: filters.domain || null,
         }),
@@ -367,14 +424,14 @@ export default function Discover({
         <div className="border-b border-paper/10">
           <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
             <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-              The corpus
+              The collection
             </p>
             <h1 className="mt-5 font-display text-[2.6rem] font-light leading-[1.05] tracking-tight text-paper sm:text-5xl lg:text-[3.6rem]">
               Discover
             </h1>
             <p className="mt-6 max-w-xl font-display text-lg font-light leading-relaxed text-paper-dim md:text-xl">
-              Everything Noema holds, across literature, anime and manga — searched
-              by title, or by what a passage means.
+              Everything Noema holds, across literature, anime and manga — search it
+              by title, or describe a theme and see what reads like it.
             </p>
             {corpusLine(facets) && (
               <p className="mt-8 text-[0.66rem] uppercase tracking-label text-paper-faint">
@@ -668,13 +725,13 @@ export default function Discover({
           <div aria-labelledby="semantic-heading">
             <SectionHeading
               id="semantic-heading"
-              label="Passages"
+              label="By theme"
               title={
                 !semantic
-                  ? 'Search by meaning'
-                  : semantic.hits.length === 0
-                    ? 'No passages matched your search.'
-                    : `Passages that read like “${semantic.query}”`
+                  ? 'Search by theme'
+                  : semantic.results.length === 0
+                    ? 'Nothing here reads like that.'
+                    : `Works that read like “${semantic.query}”`
               }
             />
 
@@ -683,68 +740,57 @@ export default function Discover({
                 <StateMessage
                   kind="empty"
                   title="Describe what you are in the mood for."
-                  detail="Noema compares your description with the text it holds — “a chase across a city”, “grief over someone who is gone”."
+                  detail="Noema looks through the writing it holds for something that reads like it — “a chase across a city”, “grief over someone who is gone”."
                 />
               </div>
-            ) : semantic.hits.length === 0 ? (
+            ) : semantic.results.length === 0 ? (
               <div className="mt-10">
                 <StateMessage
                   kind="empty"
-                  title="No passages matched your search."
+                  title="Nothing here reads like that."
                   detail="Try describing the situation differently, or search by title instead."
                 />
               </div>
             ) : (
               <>
-                <ul className="mt-12 divide-y divide-paper/10 border-t border-paper/10">
-                  {semantic.hits.map((hit, index) => (
-                    <li
-                      key={`${hit.content_unit_id ?? hit.passage_id ?? index}`}
-                      className="py-10"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onOpenWork(hit.work_id)}
-                        className="text-left font-display text-2xl font-light text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                      >
-                        {hit.work_title}
-                      </button>
-
-                      <p className="mt-3 text-[0.62rem] uppercase tracking-label text-paper-faint">
-                        {hit.domain_slug}
-                        {hit.container_title && ` · ${hit.container_title}`}
-                      </p>
-
-                      {/*
-                        Which tier the matching text came from, always. A
-                        third-party episode summary is not the episode, and
-                        a reader must be able to tell.
-                      */}
-                      <p className="mt-2 text-[0.8rem] text-paper-faint">
-                        {hit.text_tier === 'summary'
-                          ? `— from a ${hit.source_name ?? 'third-party'} summary, not the work’s own text`
-                          : '— from the work’s own text'}
-                      </p>
-
-                      <p className="mt-5 max-w-3xl font-display text-lg font-light italic leading-relaxed text-paper/85">
-                        {hit.text_excerpt}
-                      </p>
+                <ul className="mt-12 grid grid-cols-2 gap-x-6 gap-y-12 sm:gap-x-8 md:gap-y-14 lg:grid-cols-4">
+                  {semantic.results.map((hit, index) => (
+                    <li key={hit.work.id}>
+                      <WorkEntry
+                        work={hit.work}
+                        state={hit.user_state}
+                        onOpen={onOpenWork}
+                        priority={index < 4}
+                        detail={<SemanticEvidence hit={hit} />}
+                      />
                     </li>
                   ))}
                 </ul>
 
                 <p className="mt-10 max-w-2xl text-[0.8rem] leading-relaxed text-paper-faint">
-                  These are passages whose wording is close to your description. They
-                  are not chosen for you, and closeness is not quality.{' '}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onOpenRetrievalDetail({ mode, query, page, ...filters })
-                    }
-                    className="border-b border-paper/25 text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    Inspect retrieval details
-                  </button>
+                  These are works whose writing reads like your description. They
+                  are not chosen for you, and reading alike is not the same as
+                  being good.
+                  {/*
+                    The inspector behind this link shows distances and
+                    representation names. It exists in a development build
+                    only, so the link does too -- a production bundle has no
+                    route to send anyone to.
+                  */}
+                  {DEV_SURFACES && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenRetrievalDetail({ mode, query, page, ...filters })
+                        }
+                        className="border-b border-paper/25 text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      >
+                        See how this search works
+                      </button>
+                    </>
+                  )}
                 </p>
               </>
             )}

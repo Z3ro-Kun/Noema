@@ -11,12 +11,14 @@ redis==5.2.1
 rq==2.1.0
 httpx==0.28.1
 
-# Embeddings. Noema is CPU-first: install the CPU-only torch wheel FIRST so
-# pip does not pull ~2.5GB of CUDA libraries that nothing here uses --
+# Embeddings. Both processes need these: the worker encodes the corpus, and
+# the API encodes a *query* for theme search (`POST /api/v1/search/works`),
+# which loads the same model into the API process on first use.
+#
+# Noema is CPU-first. Install the CPU-only torch wheel FIRST so pip does not
+# pull ~2.5 GB of CUDA libraries that nothing here uses --
 #   pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-# then install this file. A GPU is never required.
+# then install this file. The Dockerfiles do exactly that. A GPU is never
+# required.
 torch==2.5.1
 sentence-transformers==3.3.1
-
-pytest==8.3.4
-pytest-asyncio==0.25.0

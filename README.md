@@ -1,16 +1,89 @@
-# Multi-Theme
+# Noema
 
-Multi-Theme is an AI/ML-powered exploration platform for **Literature,
-Anime, and Manhwa**. It represents these narrative domains in a shared
-semantic space so users can explore concepts, entities, relationships,
-semantic similarity, and narrative structure across them.
+**Noema reads what you rate, and nothing else.**
 
-Core philosophy: **Extract → Structure → Visualize → Explore**. The system
-surfaces computational observations and their supporting evidence rather
-than acting as a chatbot or declaring literary interpretations outright.
+Noema is a reading and watching companion for **literature, anime and
+manga/manhwa**, held as one collection rather than three. Track what you read
+and watch, rate it, and Noema describes the themes your ratings keep returning
+to — then points at works you have not met that carry them, and says which of
+your own ratings put each one there.
 
-This repository is currently at **Phase 1Z: the library and the work**
--- see [Project status](#project-status).
+Every claim it makes is traceable. A recommendation names the preference that
+selected it; that preference names the works you rated; those works carry the
+concept in the database. Nothing is inferred about you as a person, and
+nothing is shown that cannot be checked.
+
+- **Live demo:** not yet deployed. The target is Oracle Cloud —
+  [`deploy/oci/README.md`](deploy/oci/README.md) is the provisioning runbook,
+  and [`docs/deployment.md`](docs/deployment.md) the provider-neutral
+  architecture and environment contract.
+- **Repository:** this repository.
+- **Release:** V1.0 baseline. Feature-complete for V1; see
+  [Limitations](#v1-limitations).
+
+## What V1 does
+
+**Start with an account.** Noema is not a public catalogue — every page of it
+is behind a session, so what you are shown is always tied to a reader. Once
+signed in: browse 64 works across three media, search by title, search by
+theme ("a chase across a city", "grief over someone who is gone"), and open
+any work's page.
+
+**Keep a library.** Add works, track status (planned, in progress, on hold,
+completed, abandoned), rate on a 1–10 scale, record re-reads, and see the
+history of what you changed and when.
+
+**Get a taste profile.** Noema groups the themes your ratings run through into
+what you particularly enjoy, what you seem drawn to, what you tend to avoid,
+and what it is only starting to notice. Every group is backed by a count of
+your own ratings, and you can tell it when a reading is wrong.
+
+**Get recommendations, with reasons.** Works you have not met, chosen because
+they carry concepts your established preferences are about — "Because you
+enjoy Memory and Forgetting, from 5 works you rated". Dislikes subtract and
+are declared. "Not interested" removes a work from the shelf for good, and is
+kept strictly apart from every other signal.
+
+**Distinct signals, kept distinct.** A rating is not a completion, a
+completion is not enjoyment, abandonment is not a low rating, and "do not
+recommend this" is not a dislike. Each is stored separately and none is
+inferred from another.
+
+### Major ML components
+
+| | |
+|---|---|
+| Embeddings | `sentence-transformers/all-mpnet-base-v2`, 768-d, L2-normalized, 32,082 vectors over passages and work-level summaries |
+| Retrieval | pgvector cosine nearest-neighbour, folded from passages into unique works |
+| Concepts | a shared cross-domain vocabulary, associated with works from source labels with recorded provenance |
+| Preference engine | per-concept evidence from ratings alone, with shrunk personal baselines and separate direction/confidence axes |
+| Taste aggregation | features and feature pairs a rating history actually supports, with an established/emerging boundary |
+| Recommendations | deterministic, content-based, explainable: established preferences → concepts → candidate works → a stated reason |
+
+No collaborative filtering, no learned ranking, no popularity, and no LLM
+anywhere in the product path.
+
+## V1 limitations
+
+Known and deliberate, not defects:
+
+- **No semantic signal in recommendations.** Embeddings power search; the
+  recommender reads concepts only, so the concept layer could be proven on its
+  own first.
+- **No popularity fallback.** A reader without enough ratings is told so rather
+  than shown whatever is popular.
+- **No collaborative filtering and no learned ranking.**
+- **Concept annotation is uneven.** Literature averages 1.2 concepts per work
+  against ~11.5 for anime and manga, which caps how much of a reader's taste a
+  novel can ever match. Measured, and reported by
+  `backend/scripts/analyze_concept_bias.py`.
+- **Shelf order is not raw score order.** The diversity rule spaces
+  near-duplicates, so a slightly stronger match can appear below a weaker one.
+- **Recommendations recompute per request.** Fine at 64 works; not measured at
+  scale.
+- **No recommendation-quality ground truth.** The evaluation harness tests
+  semantics and invariants, not whether a suggestion is good.
+- **Three media only.** Literature, anime, manga/manhwa.
 
 ## Architecture
 
@@ -80,9 +153,9 @@ docker compose up -d db redis
 # 3. Backend
 cd backend
 python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt   # .venv/bin/pip on macOS/Linux
-.venv/Scripts/alembic upgrade head              # creates the schema
-.venv/Scripts/uvicorn app.main:app --reload     # http://localhost:8000
+.venv/Scripts/pip install -r requirements-dev.txt  # .venv/bin/pip on macOS/Linux
+.venv/Scripts/alembic upgrade head                 # creates the schema
+.venv/Scripts/uvicorn app.main:app --reload        # http://localhost:8000
 
 # 4. Worker (separate terminal)
 cd backend
@@ -92,6 +165,15 @@ cd backend
 cd frontend
 npm install
 npm run dev                                      # http://localhost:5173
+```
+
+`requirements-dev.txt` is the runtime set plus pytest. `requirements.txt` on
+its own is what the deployment images install. Install the CPU-only torch wheel
+first if you would rather not download ~2.5 GB of CUDA libraries that nothing
+here uses:
+
+```bash
+.venv/Scripts/pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 ```
 
 Or run the backend and worker containerized instead of steps 3-4:
@@ -193,6 +275,12 @@ cd backend && .venv/Scripts/pytest
 cd frontend && npm test
 ```
 
+### Deployment
+
+[`docs/deployment.md`](docs/deployment.md) covers the production environment
+contract, the migration and corpus-initialization commands, the API/worker/
+frontend startup commands, the health endpoint, and the smoke test.
+
 ### Configuration and secrets
 
 Every `.env` is gitignored; only `.env.example` files are tracked and they
@@ -201,6 +289,14 @@ contain placeholders, never real credentials. `Settings` defaults in
 missing `.env` fails loudly rather than connecting somewhere unexpected.
 
 ## Project status
+
+**V1.0 — the release baseline.** Feature-complete: catalogue, search, accounts,
+library, ratings, taste profile, recommendations and recommendation feedback.
+Hardened for deployment — production configuration is validated at startup, the
+three inspection surfaces exist in development builds only, and a clean
+database is verified to migrate to Alembic `0013`.
+
+The phase log below is kept as the record of how it was built.
 
 **Phase 0: foundation.** Complete and verified against real local
 infrastructure (PostgreSQL 18 + pgvector 0.8.6, Redis, RQ on Windows).
@@ -737,7 +833,9 @@ provenance, read-only catalog API, minimal frontend.
       media and shows actual works -- browsing shared content has never
       needed an account. Signed in: recent activity from the reader's own
       history, a taste preview with a route to the full profile, and ways
-      into Discover
+      into Discover. *(The signed-out half is superseded: Noema is now behind
+      a login and the root route sends an anonymous reader to `/login`. See
+      "What V1 does".)*
 - [x] **Discovery as a product surface**, not a search demo. Server-side
       filters (domain, concept, genre), a page rather than a slice, and
       `/works/facets` reporting what each filter would actually match

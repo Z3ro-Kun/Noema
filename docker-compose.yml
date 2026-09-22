@@ -1,3 +1,13 @@
+# The local development stack: Postgres with pgvector, Redis, the API and the
+# RQ worker, on one machine.
+#
+# Deliberately not a production manifest. The two application services bind
+# ./backend into the container so an edit is picked up without a rebuild,
+# which means the image's own copy of the code is shadowed by the host tree --
+# right for development, wrong everywhere else. A deployment builds
+# backend/Dockerfile and backend/worker/Dockerfile and supplies configuration
+# through the environment; see docs/deployment.md.
+
 services:
   db:
     image: pgvector/pgvector:pg16

@@ -25,6 +25,14 @@ character...)", "Children's stories"); neither is a narrative feature.
 Re-running is a no-op: an existing association is updated in place with any
 newly supporting labels rather than duplicated, and the unique constraint on
 (work_id, concept_id) makes that structural rather than conventional.
+
+**Convergence runs both ways.** An association whose supporting labels no
+longer map to it is withdrawn rather than left behind. Without that, the
+vocabulary stops being the single source of truth the moment an alias is
+corrected: the label stops producing new rows while every row it already
+produced stays, and the database keeps asserting something the vocabulary no
+longer says. Withdrawal is reported per work and is the only path here that
+removes anything.
 """
 
 import uuid
@@ -73,6 +81,11 @@ class WorkConceptReport:
     # Set when a work supplies no labels at all -- e.g. a metadata-only work
     # whose source catalogues no narrative labels.
     no_source_labels: bool = False
+    # Associations withdrawn because the vocabulary no longer maps any of the
+    # labels that supported them. Named, never silent: this is the one path
+    # that removes a characterization, and a run that removes something has
+    # to say what and why.
+    withdrawn: list[str] = field(default_factory=list)
 
 
 async def ensure_vocabulary(session: AsyncSession) -> tuple[int, int]:
@@ -214,9 +227,6 @@ async def apply_source_labels(
             continue
         resolved.setdefault(definition.slug, []).append(label)
 
-    if not resolved:
-        return report
-
     vocabulary = await concepts_by_slug(session)
     existing_rows = {
         row.concept_id: row
@@ -226,6 +236,12 @@ async def apply_source_labels(
         .scalars()
         .all()
     }
+
+    await _withdraw_unsupported(session, report, existing_rows, vocabulary)
+
+    if not resolved:
+        await session.flush()
+        return report
 
     for slug, supporting in resolved.items():
         concept = vocabulary.get(slug)
@@ -262,8 +278,20 @@ async def apply_source_labels(
             report.created += 1
             continue
 
-        changed = False
-        entries = list(row.supporting_labels or [])
+        # Evidence the vocabulary has since stopped reading as this concept is
+        # dropped from the row for the same reason the row itself would be
+        # dropped if nothing were left: `supporting_labels` is the list of
+        # labels supporting *this* concept, and a label that no longer maps
+        # here is not one of them. Nothing is lost that the source still says
+        # -- the label is still on the work, and still reported as unmapped or
+        # attributed to whatever it does mean now.
+        recorded = list(row.supporting_labels or [])
+        entries = [
+            entry
+            for entry in recorded
+            if (resolve_source_label(entry.get("label") or "") or _NOTHING).slug == slug
+        ]
+        changed = len(entries) != len(recorded)
         for label in supporting:
             entries, added = _merge(entries, _evidence(label))
             changed = changed or added
@@ -283,6 +311,60 @@ async def apply_source_labels(
 
     await session.flush()
     return report
+
+
+async def _withdraw_unsupported(
+    session: AsyncSession,
+    report: WorkConceptReport,
+    existing_rows: dict[uuid.UUID, WorkConcept],
+    vocabulary: dict[str, Concept],
+) -> None:
+    """Remove associations the vocabulary no longer supports.
+
+    The test is deliberately narrow: a row goes only when **every** label
+    recorded as supporting it now resolves somewhere other than this concept,
+    or nowhere at all. So correcting an alias withdraws exactly the rows that
+    alias produced, and a row still backed by one good label survives with
+    its other evidence intact.
+
+    A row with no recorded supporting labels is left alone. Those predate the
+    provenance field or were written by something other than this path, and
+    deleting on an absence of evidence is the opposite of what this module is
+    for.
+    """
+    by_id = {concept.id: slug for slug, concept in vocabulary.items()}
+
+    for concept_id, row in list(existing_rows.items()):
+        labels = row.supporting_labels or []
+        if not labels:
+            continue
+
+        slug = by_id.get(concept_id)
+        if slug is None:
+            # The concept itself is gone from the vocabulary. Not this
+            # function's business -- removing a Concept row is a separate,
+            # deliberate act -- so the association is left for a human.
+            continue
+
+        still_supported = any(
+            (resolve_source_label(entry.get("label") or "") or _NOTHING).slug == slug
+            for entry in labels
+        )
+        if still_supported:
+            continue
+
+        report.withdrawn.append(slug)
+        await session.delete(row)
+        del existing_rows[concept_id]
+
+
+class _Nothing:
+    """A definition-shaped absence, so the check above needs no None branch."""
+
+    slug = None
+
+
+_NOTHING = _Nothing()
 
 
 async def list_work_concepts(

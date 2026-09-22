@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "work_concepts",
     "user_preference_feedback",
     "user_preference_feedback_events",
+    "user_recommendation_feedback",
 }
 
 

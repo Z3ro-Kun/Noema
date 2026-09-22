@@ -67,6 +67,10 @@ def print_report(report) -> None:
         f"{head}\n    labels {report.labels_examined:3d} | "
         f"created {report.created} | updated {report.updated} | unchanged {report.unchanged}"
     )
+    if report.withdrawn:
+        # The only line here that reports a removal, so it is never folded
+        # into a count: a run that withdrew something has to name it.
+        print(f"    WITHDRAWN {len(report.withdrawn):3d}: {', '.join(report.withdrawn)}")
     if report.unmapped:
         shown = ", ".join(report.unmapped[:6])
         more = f" (+{len(report.unmapped) - 6} more)" if len(report.unmapped) > 6 else ""

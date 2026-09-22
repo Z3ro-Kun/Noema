@@ -168,16 +168,31 @@ def test_domains_endpoint_lists_all_three_domains(client: TestClient) -> None:
 
 
 def works_by_id(client: TestClient, **params) -> dict:
-    """The /works listing keyed by work id.
+    """The whole /works listing keyed by work id.
 
     The endpoint returns a `WorkListResponse` page of `WorkPresentation`
     objects -- canonical `work` plus the caller's `user_state` -- rather than
     bare works, so tests reach through `["items"]` and `["work"]`
     deliberately.
+
+    Every page is walked, because the listing is ordered by title and these
+    tests ask whether a particular work is *in the corpus*, not whether it
+    happens to sort onto the first page. Reading one page would make them a
+    test of how many works the corpus holds and of how the fixture titles
+    alphabetise, both of which are free to change.
     """
-    response = client.get("/api/v1/works", params=params or None)
-    assert response.status_code == 200
-    return {entry["work"]["id"]: entry for entry in response.json()["items"]}
+    collected: dict = {}
+    page = 1
+    while True:
+        response = client.get(
+            "/api/v1/works", params={**params, "page": page, "page_size": 100}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        collected.update({entry["work"]["id"]: entry for entry in body["items"]})
+        if not body["items"] or len(collected) >= body["total"]:
+            return collected
+        page += 1
 
 
 def test_works_endpoint_returns_the_ingested_work(client: TestClient, ingested_work: str) -> None:
@@ -277,7 +292,7 @@ def test_anime_works_are_listed_under_the_anime_domain(
 def test_both_domains_are_served_by_the_same_endpoint(
     client: TestClient, ingested_work: str, ingested_anime: tuple[str, str]
 ) -> None:
-    by_id = works_by_id(client, limit=200)
+    by_id = works_by_id(client)
 
     assert by_id[ingested_work]["work"]["domain"]["slug"] == "literature"
     assert by_id[ingested_anime[0]]["work"]["domain"]["slug"] == "anime"

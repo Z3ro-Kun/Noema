@@ -200,7 +200,16 @@ VOCABULARY: tuple[ConceptDefinition, ...] = (
         name="Post-Apocalypse",
         concept_type=TYPE_MOTIF,
         description="Life after a civilisation-ending catastrophe.",
-        aliases=("Post-Apocalyptic", "Dystopian", "Lost Civilization", "Survival"),
+        # "Dystopian", "Survival" and "Lost Civilization" were aliases here
+        # and should not have been. A dystopia is a functioning oppressive
+        # society, survival is a mode that appears in stories of every
+        # setting, and a lost civilisation is ancient ruins -- none of them
+        # is life after a collapse. Between them they put Vagabond (17th
+        # century Japan), Chainsaw Man, Tokyo Ghoul, Berserk, Code Geass and
+        # Uzumaki in this concept at confidences of 0.62 to 0.87, which is
+        # why no confidence threshold would have caught them. The audit that
+        # found this is recorded in docs/architecture.md.
+        aliases=("Post-Apocalyptic",),
     ),
     ConceptDefinition(
         slug="time-manipulation",
@@ -224,7 +233,11 @@ VOCABULARY: tuple[ConceptDefinition, ...] = (
         name="Urban Modernity",
         concept_type=TYPE_MOTIF,
         description="The modern city, technology, and networked life.",
-        aliases=("Urban", "Cyberpunk", "Virtual World", "Artificial Intelligence"),
+        # "Artificial Intelligence" and "Virtual World" named subjects rather
+        # than this setting: a story can be about an AI without being urban
+        # or modern, and Hunter x Hunter's Greed Island is a game world
+        # inside a fantasy. Both are dropped for the same reason as above.
+        aliases=("Urban", "Cyberpunk"),
     ),
     ConceptDefinition(
         slug="historical-setting",

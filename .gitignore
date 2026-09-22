@@ -87,6 +87,12 @@ data/evaluation/*
 !data/**/.gitkeep
 
 
+# --- Deployment -------------------------------------------------------------
+# deploy/oci/scripts/backup-db.sh writes pg_dump archives here by default.
+# They are a copy of the production database and belong nowhere near git.
+deploy/oci/backups/
+
+
 # --- Local infrastructure ---------------------------------------------------
 # docker-compose.yml uses named volumes (pgdata, redisdata), so Postgres and
 # Redis data live in Docker rather than in the working tree. Only the

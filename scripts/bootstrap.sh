@@ -14,6 +14,6 @@ done
 
 echo "Next steps:"
 echo "  docker compose up -d db redis"
-echo "  cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements.txt"
+echo "  cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt"
 echo "  cd backend && alembic upgrade head"
 echo "  cd frontend && npm install"

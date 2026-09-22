@@ -26,6 +26,7 @@ Four works are seeded under test-only identifiers and removed afterwards.
 import asyncio
 import json
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -549,6 +550,89 @@ def test_26_history_is_oldest_first_and_stable(api: LibraryApi) -> None:
     first = history(api, headers, work_id)
     assert kinds(first) == ["added", "paused", "abandoned"]
     assert history(api, headers, work_id) == first
+
+
+def test_26b_history_holds_its_order_on_a_clock_that_does_not_move(
+    api: LibraryApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The order is the order things happened, not an artefact of clock speed.
+
+    History is read `order_by(occurred_at, id)` and `id` is a random uuid4, so
+    two events sharing a timestamp do not order -- they shuffle. The wall
+    clock on Windows ticks somewhere between 0.5 ms and 15.6 ms depending on
+    what else is running, which is slower than five requests, so this used to
+    fail every so often and pass the rest of the time.
+
+    Stopping the wall clock outright is the worst case and removes the luck:
+    what survives it survives any real clock. `app.core.clock` is what makes
+    it survive.
+    """
+    from app.core import clock
+
+    frozen = datetime.now(timezone.utc)
+
+    class StoppedWallClock:
+        @staticmethod
+        def now(tz: timezone | None = None) -> datetime:
+            return frozen
+
+    monkeypatch.setattr(clock, "datetime", StoppedWallClock)
+    monkeypatch.setattr(clock, "_last", None)
+
+    headers = register(api, "stopped-clock")
+    work_id = api.work_ids[0]
+    add(api, headers, work_id)
+    patch(api, headers, work_id, status=STATUS_IN_PROGRESS)
+    patch(api, headers, work_id, status=STATUS_COMPLETED)
+    patch(api, headers, work_id, rating=9, rating_set=True)
+    patch(api, headers, work_id, status=STATUS_IN_PROGRESS)
+
+    assert kinds(history(api, headers, work_id)) == [
+        "added",
+        "started",
+        "completed",
+        "rated",
+        "restarted",
+    ]
+
+
+def test_26c_one_request_writing_two_events_keeps_them_in_order(
+    api: LibraryApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second completion is a restart *then* a finish, never the reverse.
+
+    Both events are written inside one request, so they are the pair most
+    exposed to a coarse clock. Read back, they have to say that the reader
+    started it again and then finished it again.
+    """
+    from app.core import clock
+
+    frozen = datetime.now(timezone.utc)
+
+    class StoppedWallClock:
+        @staticmethod
+        def now(tz: timezone | None = None) -> datetime:
+            return frozen
+
+    monkeypatch.setattr(clock, "datetime", StoppedWallClock)
+    monkeypatch.setattr(clock, "_last", None)
+
+    headers = register(api, "twice-through")
+    work_id = api.work_ids[0]
+    add(api, headers, work_id)
+    patch(api, headers, work_id, status=STATUS_COMPLETED)
+
+    response = api.client.post(
+        f"/api/v1/library/{work_id}/completions", headers=headers
+    )
+    assert response.status_code == 200, response.text
+
+    assert kinds(history(api, headers, work_id)) == [
+        "added",
+        "completed",
+        "restarted",
+        "completed",
+    ]
 
 
 def test_27_only_a_rating_entry_carries_a_number(api: LibraryApi) -> None:

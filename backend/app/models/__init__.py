@@ -36,6 +36,11 @@ from app.models.library import (
     UserContentInteraction,
 )
 from app.models.provenance import TextSource
+from app.models.recommendation_feedback import (
+    ACTION_NOT_INTERESTED,
+    RECOMMENDATION_FEEDBACK_ACTIONS,
+    UserRecommendationFeedback,
+)
 from app.models.representation import (
     OWNER_TYPE_CONTEXTUAL_PASSAGE,
     ContextualPassage,
@@ -77,6 +82,9 @@ __all__ = [
     "Relationship",
     "Evidence",
     "TextSource",
+    "ACTION_NOT_INTERESTED",
+    "RECOMMENDATION_FEEDBACK_ACTIONS",
+    "UserRecommendationFeedback",
     "ExperimentEmbedding",
     "ContextualPassage",
     "OWNER_TYPE_CONTEXTUAL_PASSAGE",

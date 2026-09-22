@@ -153,6 +153,31 @@ class WikipediaClient:
         body = self._get({"action": "query", "meta": "siteinfo", "siprop": "rightsinfo"})
         return (body.get("query") or {}).get("rightsinfo") or {}
 
+    def existing_titles(self, titles: list[str]) -> set[str]:
+        """Which of these pages exist, in one request.
+
+        The Action API takes many titles at once and marks the absent ones
+        `missing`, so asking about twenty candidates costs one round trip
+        instead of twenty. It normalizes what it is given -- underscores to
+        spaces, first letter capitalized -- so the answer is mapped back to
+        the titles the caller actually passed.
+        """
+        body = self._get({"action": "query", "titles": "|".join(titles)})
+        query = body.get("query") or {}
+
+        # normalized: [{"from": "<as asked>", "to": "<as the wiki spells it>"}]
+        back: dict[str, str] = {}
+        for entry in query.get("normalized") or []:
+            back[entry.get("to")] = entry.get("from")
+
+        found: set[str] = set()
+        for page in query.get("pages") or []:
+            if "missing" in page or page.get("pageid") is None:
+                continue
+            title = page.get("title")
+            found.add(back.get(title, title))
+        return found
+
     def resolve_page(self, candidates: list[str]) -> WikiPage:
         """Return the first candidate title that exists.
 
@@ -160,11 +185,32 @@ class WikipediaClient:
         dedicated "List of X episodes" article, a section of the main article,
         per-season sub-articles -- so callers pass the candidates worth trying
         for their corpus rather than this guessing a universal scheme.
+
+        Candidate lists are mostly misses by design -- a series is filed under
+        one of the shapes, not all of them -- so existence is established in a
+        single request and only the survivors are fetched in full. The order
+        is the caller's, unchanged: the first surviving candidate wins, exactly
+        as when each was tried in turn. If that probe fails for any reason the
+        candidates are simply tried one by one, which is slower and always
+        correct.
         """
+        unique = list(dict.fromkeys(title for title in candidates if title))
+        if not unique:
+            raise PageNotFoundError("no candidate titles were offered")
+
+        ordered = unique
+        if len(unique) > 1:
+            try:
+                existing = self.existing_titles(unique)
+            except WikipediaError:
+                existing = None
+            if existing is not None:
+                ordered = [title for title in unique if title in existing]
+
         attempted: list[str] = []
-        for title in candidates:
+        for title in ordered:
             try:
                 return self.fetch_page(title)
             except PageNotFoundError:
                 attempted.append(title)
-        raise PageNotFoundError(f"none of these pages exist: {attempted}")
+        raise PageNotFoundError(f"none of these pages exist: {unique}")

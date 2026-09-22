@@ -8,11 +8,17 @@ import StateMessage from '../components/StateMessage'
 import WorkEntry from '../components/WorkEntry'
 import { fetchWorks } from '../api/catalog'
 import { fetchTasteDashboard } from '../api/dashboard'
+import { dismissRecommendation, fetchRecommendations } from '../api/recommendations'
 import { addToLibrary, fetchLibrary, fetchLibrarySummary } from '../api/library'
 import { useSession } from '../auth/session'
 import { activityLine } from '../lib/labels'
+import { hedge, leadPhrase, supportLine } from '../lib/taste'
 import type {
   LibrarySummary,
+  PreferenceBucket,
+  Recommendation,
+  RecommendationReason,
+  RecommendationResponse,
   TasteDashboard,
   TastePreferenceItem,
   WorkPresentation,
@@ -78,6 +84,8 @@ import type {
 
 const RECENT_LIMIT = 5
 const SHELF_SIZE = 4
+// Four across on a wide screen, which is one row and not a page of them.
+const RECOMMENDATION_LIMIT = 4
 /** At most two shelves: three would be a feed, and this is a landing page. */
 const SHELF_COUNT = 2
 /** Three rows is a band; more is a report. */
@@ -104,10 +112,13 @@ interface Shelf {
 
 interface TasteRow {
   key: string
-  group: string
+  /** The lead phrase: "You particularly enjoy". */
+  lead: string
   name: string
-  evidence: string
-  band: string
+  /** What it rests on, in a sentence of the reader's own ratings. */
+  support: string
+  /** A caveat, only where one is warranted. Usually null. */
+  hedge: string | null
 }
 
 /** The established preferences a concept shelf can be built from. */
@@ -119,46 +130,74 @@ function shelfCandidates(dashboard: TasteDashboard): TastePreferenceItem[] {
     .slice(0, SHELF_COUNT)
 }
 
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`
+/**
+ * The sentence under a recommended work.
+ *
+ * `presentation_key` is a controlled key and the backend sends no prose, so
+ * the wording is chosen here -- and it adds no fact. Every name in the
+ * sentence is a concept the work actually carries and a preference the
+ * reader can find on their own taste profile.
+ */
+function reasonSentence(reason: RecommendationReason): string {
+  const names = reason.concepts.map((concept) => concept.name)
+  switch (reason.presentation_key) {
+    case 'enjoys_combination':
+      return `Because you enjoy ${names.join(' with ')}`
+    case 'negative_combination':
+      return `Although ${names.join(' with ')} tends not to work for you`
+    case 'negative_feature':
+      return `Although ${names.join(' and ')} tends not to work for you`
+    default:
+      return `Because you enjoy ${names.join(' and ')}`
+  }
 }
 
-function formatList(values: string[]): string {
-  if (values.length === 0) return ''
-  if (values.length === 1) return values[0]
-  return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`
+/**
+ * What the reason rests on, in the reader's own ratings.
+ *
+ * A count they can check against their own profile, not a grade. The band is
+ * allowed to add "early days" and nothing more -- see `lib/taste` for why a
+ * confidence word never appears on a public surface.
+ */
+function supportNote(reason: RecommendationReason): string {
+  const works = plural(reason.rated_works, 'work', 'works')
+  return reason.confidence_band === 'low'
+    ? `From ${works} you rated — early days`
+    : `From ${works} you rated`
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
 }
 
 /**
  * The taste band's rows, from the real dashboard groups.
  *
  * The prototype listed three patterns with a strength bar each. The groups
- * and the evidence sentence survive; the bar does not, because no numeric
- * strength crosses the API. The group name carries what the bar was reaching
- * for, and says it in words.
+ * and the supporting sentence survive; the bar does not, because no numeric
+ * strength crosses the API and a length would read as a percentage.
+ *
+ * The wording is not chosen here -- `lib/taste` owns it, so this band and the
+ * profile page say the same thing about the same finding.
  */
 function tasteRows(dashboard: TasteDashboard | null): TasteRow[] {
   if (!dashboard) return []
-  const groups: [string, TastePreferenceItem[]][] = [
-    ['You particularly enjoy', dashboard.strongly_likes],
-    ['You also enjoy, more mildly', dashboard.mildly_likes],
-    ['You tend not to enjoy', dashboard.dislikes],
-    ['Noema is beginning to notice', dashboard.emerging],
+  const groups: [PreferenceBucket, TastePreferenceItem[]][] = [
+    ['strongly_likes', dashboard.strongly_likes],
+    ['mildly_likes', dashboard.mildly_likes],
+    ['dislikes', dashboard.dislikes],
+    ['emerging', dashboard.emerging],
   ]
 
   const rows: TasteRow[] = []
-  for (const [group, items] of groups) {
+  for (const [bucket, items] of groups) {
     for (const item of items) {
-      const { rated_works: rated, domains } = item.evidence_summary
       rows.push({
         key: item.key,
-        group,
+        lead: leadPhrase(bucket),
         name: item.display_name,
-        evidence:
-          domains.length > 0
-            ? `${plural(rated, 'rated work', 'rated works')} in ${formatList(domains)}.`
-            : `${plural(rated, 'rated work', 'rated works')}.`,
-        band: item.confidence_band,
+        support: supportLine(item.evidence_summary),
+        hedge: hedge(item.confidence_band, bucket),
       })
     }
   }
@@ -372,7 +411,7 @@ function AnonymousHome({
             id="media-heading"
             label="Three media, one collection"
             title="Literature, anime and manga, read together"
-            description="Held in the same semantic space, so a theme can be followed from a novel into a series without changing tools."
+            description="Held as one collection, so a theme can be followed from a novel into a series without changing tools."
             action={{ label: 'Explore everything', onClick: () => onNavigate('discover') }}
           />
           <ul className="mt-10 grid divide-y divide-paper/10 border-t border-paper/10 md:grid-cols-3 md:divide-x md:divide-y-0">
@@ -555,6 +594,7 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
   const [dashboard, setDashboard] = useState<TasteDashboard | null>(null)
   const [summary, setSummary] = useState<LibrarySummary | null>(null)
   const [shelves, setShelves] = useState<Shelf[]>([])
+  const [suggested, setSuggested] = useState<RecommendationResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -565,14 +605,16 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
       // The library is the only required call. A taste profile or a summary
       // that fails must not take the page with it -- the reader's own history
       // is still worth showing.
-      const [library, profile, counts] = await Promise.all([
+      const [library, profile, counts, recommended] = await Promise.all([
         fetchLibrary({ page_size: RECENT_LIMIT }),
         fetchTasteDashboard().catch(() => null),
         fetchLibrarySummary().catch(() => null),
+        fetchRecommendations(RECOMMENDATION_LIMIT).catch(() => null),
       ])
       setRecent(library.items)
       setDashboard(profile)
       setSummary(counts)
+      setSuggested(recommended)
       setError(null)
 
       if (profile) {
@@ -616,10 +658,158 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
     setDashboard(null)
     setSummary(null)
     setShelves([])
+    setSuggested(null)
     setLoading(false)
   }, [session.loading, session.account, loadForReader])
 
-  /** Signed in only. Anonymous callers never reach this. */
+  /**
+ * Recommended for you.
+ *
+ * The only shelf on this page that is actually ranked for the reader. The
+ * concept shelves below it are a Discover filter and say so; this one
+ * excludes what they already hold and orders by their own established
+ * preferences.
+ *
+ * Cold start is an honest sentence, not a filled shelf. There is no
+ * popularity model behind this to fall back on, and inventing one to avoid
+ * an empty state would be the thing the whole layer is built to refuse.
+ */
+function RecommendationShelf({
+  response,
+  onOpenWork,
+  onNavigate,
+}: {
+  response: RecommendationResponse
+  onOpenWork: (workId: string) => void
+  onNavigate: (view: ProductView) => void
+}) {
+  // Dismissed here rather than by refetching the shelf: a refetch would slide
+  // a replacement into the gap the moment someone clicked, which reads as the
+  // page arguing back. The work leaves, the rest stays put.
+  const [dismissed, setDismissed] = useState<string[]>([])
+  const [dismissing, setDismissing] = useState<string | null>(null)
+  const [dismissError, setDismissError] = useState<string | null>(null)
+
+  const dismiss = useCallback(async (workId: string) => {
+    setDismissing(workId)
+    setDismissError(null)
+    try {
+      await dismissRecommendation(workId)
+      setDismissed((current) => [...current, workId])
+    } catch (caught) {
+      // Nothing is removed on a failure: a card that vanished without being
+      // saved would come back on the next load and look like a bug.
+      setDismissError(
+        caught instanceof Error ? caught.message : 'Could not save that. Try again.',
+      )
+    } finally {
+      setDismissing(null)
+    }
+  }, [])
+
+  const { state } = response.summary
+  const visible = response.recommendations.filter(
+    (item) => !dismissed.includes(item.work.id),
+  )
+  const prompt =
+    state === 'no_activity'
+      ? 'Rate a few works to start building your recommendations.'
+      : state === 'no_ratings'
+        ? 'You have works tracked but none rated yet. Rate a few to start building your recommendations.'
+        : state === 'building'
+          ? 'Nothing has settled into a pattern yet. Rate a few more works and this fills in.'
+          : state === 'no_matches'
+            ? 'Nothing new in the catalogue carries the themes you have established yet.'
+            : null
+
+  return (
+    <section
+      aria-labelledby="recommended-heading"
+      className="border-b border-paper/10"
+    >
+      <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-24 lg:px-10">
+        <SectionHeading
+          id="recommended-heading"
+          label="From your ratings"
+          title="Recommended for you"
+          action={
+            prompt
+              ? { label: 'Browse the catalogue', onClick: () => onNavigate('discover') }
+              : undefined
+          }
+        />
+        <div className="mt-12">
+          {dismissError && (
+            <div className="mb-8">
+              <StateMessage
+                kind="error"
+                title="That did not save."
+                detail={dismissError}
+              />
+            </div>
+          )}
+          {prompt ? (
+            <StateMessage
+              kind="empty"
+              title={prompt}
+              detail="Noema recommends from what you rate, and says nothing when it has nothing to say."
+            />
+          ) : visible.length === 0 ? (
+            <StateMessage
+              kind="empty"
+              title="Nothing left on this shelf."
+              detail="Rate a few more works and Noema will have more to go on."
+            />
+          ) : (
+            <ul className="rail -mx-5 flex snap-x snap-mandatory gap-6 overflow-x-auto px-5 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-x-8 sm:gap-y-12 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+              {visible.map(
+                ({ work, user_state: userState, reasons, cautions }: Recommendation) => (
+                  <li
+                    key={work.id}
+                    className="w-[58vw] min-w-[180px] shrink-0 snap-start sm:w-auto"
+                  >
+                    <p className="mb-3 text-[0.62rem] uppercase tracking-label text-accent">
+                      {work.domain.name}
+                    </p>
+                    <WorkEntry work={work} state={userState} onOpen={onOpenWork} />
+                    {reasons[0] && (
+                      <div className="mt-3 border-l border-paper/10 pl-3">
+                        <p className="text-[0.78rem] leading-relaxed text-paper-dim">
+                          {reasonSentence(reasons[0])}
+                        </p>
+                        <p className="mt-1 text-[0.62rem] uppercase tracking-label text-paper-faint">
+                          {supportNote(reasons[0])}
+                        </p>
+                        {cautions[0] && (
+                          <p className="mt-2 text-[0.72rem] leading-relaxed text-paper-faint">
+                            {reasonSentence(cautions[0])}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {/* Subtle on purpose. "Not interested" is a small, reversible
+                        instruction about this shelf -- not a verdict on the work,
+                        and not something to put beside the title. */}
+                    <button
+                      type="button"
+                      disabled={dismissing === work.id}
+                      onClick={() => void dismiss(work.id)}
+                      className="mt-3 text-[0.62rem] uppercase tracking-label text-paper-faint transition-colors duration-200 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+                    >
+                      {dismissing === work.id ? 'Saving…' : 'Not interested'}
+                    </button>
+                  </li>
+                ),
+              )}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Signed in only. Anonymous callers never reach this. */
   const add = useCallback(
     async (workId: string) => {
       setAdding(true)
@@ -776,6 +966,15 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
             </section>
           )}
 
+          {/* --- recommended for you ------------------------------------- */}
+          {!loading && suggested && (
+            <RecommendationShelf
+              response={suggested}
+              onOpenWork={onOpenWork}
+              onNavigate={onNavigate}
+            />
+          )}
+
           {/* --- one thread, three media --------------------------------- */}
           {!loading &&
             shelves.map((shelf) => (
@@ -840,7 +1039,14 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
           {!loading && (
             <section
               aria-labelledby="taste-heading"
-              className="border-y border-ink/15 bg-paper text-ink"
+              /*
+                The atmosphere the dark bands carry, weighted for the light
+                one. Purely decorative: the base colour underneath is `paper`,
+                so nothing here is needed to read the section, and the
+                contrast was measured at the worst point the wash reaches
+                rather than judged by eye. See `.atmosphere-paper`.
+              */
+              className="atmosphere-paper grain-paper border-y border-ink/15 text-ink"
             >
               <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-28 lg:px-10">
                 <div className="grid gap-12 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-20">
@@ -855,18 +1061,25 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
                       What Noema has noticed so far
                     </h2>
                     <p className="mt-6 max-w-sm text-[0.9rem] leading-relaxed text-surface">
-                      Read from your ratings, nothing else. Patterns change as you rate
-                      more, and Noema says when it is not yet sure.
+                      Read from your ratings, nothing else. Your taste takes shape as
+                      you rate more.
                     </p>
                     {ratedWorks > 0 && (
                       <p className="mt-4 text-[0.85rem] text-surface">
-                        From {plural(ratedWorks, 'rated work', 'rated works')}.
+                        From {plural(ratedWorks, 'work you have rated', 'works you have rated')}.
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => onNavigate('taste')}
-                      className="group mt-8 inline-flex items-center gap-2 border-b border-ink/30 pb-1 text-[0.85rem] transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      /*
+                        `outline-ink` rather than `outline-accent`: this is
+                        the one focusable control on the light band, and
+                        accent is 2.64:1 on paper -- under the 3:1 a focus
+                        indicator needs. Ink is 6.48:1 at the darkest point
+                        the wash behind it reaches.
+                      */
+                      className="group mt-8 inline-flex items-center gap-2 border-b border-ink/30 pb-1 text-[0.85rem] transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                     >
                       {strongest ? 'View your full taste profile' : 'View your taste profile'}
                       <span
@@ -887,23 +1100,26 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
                         >
                           <div>
                             <p className="text-[0.62rem] uppercase tracking-label text-surface">
-                              {row.group}
+                              {row.lead}
                             </p>
                             <dt className="mt-2 font-display text-2xl font-light leading-tight md:text-[1.75rem]">
                               {row.name}
                             </dt>
                             <dd className="mt-2 text-[0.85rem] leading-relaxed text-surface">
-                              {row.evidence}
+                              {row.support}
                             </dd>
                           </div>
                           {/*
-                            Confidence as a word. The prototype drew a
-                            proportional bar here; no numeric strength crosses
-                            the API, and a length would be a percentage.
+                            Where a grade used to sit. A reader is told what
+                            the reading rests on, not how sure a number is --
+                            and on most rows there is nothing to add, so the
+                            column is simply empty rather than padded.
                           */}
-                          <p className="text-[0.66rem] uppercase tracking-label text-surface sm:pt-1">
-                            {row.band} confidence
-                          </p>
+                          {row.hedge && (
+                            <p className="text-[0.8rem] leading-relaxed text-surface sm:pt-1">
+                              {row.hedge}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </dl>

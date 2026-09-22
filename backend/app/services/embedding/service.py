@@ -17,7 +17,7 @@ preparation version all still match. Anything else is regenerated.
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Container, ContentUnit, Domain, Embedding, Work
@@ -77,11 +77,16 @@ def eligible_units_query(
     `work_id` narrows to a single work, mirroring the filter semantic search
     already offers. It is what lets a caller re-embed just the work it has
     touched instead of walking the whole corpus.
+
+    A unit reaches its work through whichever parent it has -- a container, or
+    the work directly. Work-level summaries are eligible on the same terms as
+    everything else: they have text, so they get embedded by the same pipeline
+    with the same model, and nothing about the run treats them specially.
     """
     query = (
         select(ContentUnit)
-        .join(Container, ContentUnit.container_id == Container.id)
-        .join(Work, Container.work_id == Work.id)
+        .outerjoin(Container, ContentUnit.container_id == Container.id)
+        .join(Work, Work.id == func.coalesce(Container.work_id, ContentUnit.work_id))
         .join(Domain, Work.domain_id == Domain.id)
         .where(ContentUnit.text_content.isnot(None), ContentUnit.text_content != "")
         .order_by(ContentUnit.id)

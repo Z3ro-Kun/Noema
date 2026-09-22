@@ -25,6 +25,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -346,6 +347,49 @@ def test_12_the_latest_verdict_is_deterministic_after_repeated_answers(
     assert body["current"]["feedback"] == FEEDBACK_CONFIRMED
     assert body["current"]["submission_count"] == 3
     assert len(body["events"]) == 3
+
+
+def test_12b_answering_again_inside_one_clock_tick_still_works(
+    api: FeedbackApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two answers arriving fast must not become a 500.
+
+    `updated_at` carries a server-side `onupdate`. Writing it the value it
+    already holds reads as *unchanged* to the ORM, so the server-side default
+    takes the write instead -- and a server-written column comes back
+    expired. Projecting the row then lazy-loads on an async session, which
+    cannot await, and the reader gets an error for pressing a button twice.
+
+    The trigger is two writes sharing a timestamp, so the test stops the wall
+    clock: the worst clock there is, and the one that makes the guarantee
+    unconditional.
+    """
+    from app.core import clock
+
+    frozen = datetime.now(timezone.utc)
+
+    class StoppedWallClock:
+        @staticmethod
+        def now(tz: timezone | None = None) -> datetime:
+            return frozen
+
+    monkeypatch.setattr(clock, "datetime", StoppedWallClock)
+    monkeypatch.setattr(clock, "_last", None)
+
+    headers = a_rated_reader(api, "fast-fingers")
+    for value in (FEEDBACK_CONFIRMED, FEEDBACK_CORRECTED, FEEDBACK_CONFIRMED):
+        assert submit(api, headers, feedback=value).status_code == 201
+
+    body = api.client.get(f"{FEEDBACK_URL}/{PSYCHOLOGICAL}", headers=headers).json()
+
+    assert body["current"]["feedback"] == FEEDBACK_CONFIRMED
+    assert body["current"]["submission_count"] == 3
+    # And the history is still a sequence, not three answers in a bag.
+    assert [event["feedback_after"] for event in body["events"]] == [
+        FEEDBACK_CONFIRMED,
+        FEEDBACK_CORRECTED,
+        FEEDBACK_CONFIRMED,
+    ]
 
 
 def test_13_a_concept_never_answered_about_is_not_a_404(api: FeedbackApi) -> None:

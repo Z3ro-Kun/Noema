@@ -247,6 +247,29 @@ export function setAuthenticatedForTests(
   for (const listener of listeners) listener()
 }
 
+/**
+ * Test-only: put the store back in the state a page reload starts in.
+ *
+ * A reload with a stored token begins as `restoring`, and that moment is the
+ * one the authentication gate has to get right: the reader is neither known
+ * to be signed in nor known to be anonymous, so the gate must render nothing
+ * rather than guess. There is no other way to reach that state from a test,
+ * because the module snapshot is taken once at import.
+ */
+export function setRestoringForTests(token = 'test-token-abc'): void {
+  setSessionToken(token)
+  restoring = null
+  state = {
+    status: 'restoring',
+    account: null,
+    loading: true,
+    busy: false,
+    error: null,
+    fieldErrors: {},
+  }
+  for (const listener of listeners) listener()
+}
+
 /** Test-only: return the store to a known state between cases. */
 export function resetSessionForTests(): void {
   setSessionToken(null)

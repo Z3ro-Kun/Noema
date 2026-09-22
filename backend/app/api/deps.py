@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.models import User
 from app.services import auth_service
@@ -88,3 +89,29 @@ __all__ = [
     "get_current_user_optional",
     "get_current_token",
 ]
+
+
+# --- development-only surfaces ---------------------------------------------
+
+_NO_SUCH_ROUTE = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+
+
+async def require_internal_surface() -> None:
+    """Refuse an inspection route in production.
+
+    A handful of routes exist to look at Noema's insides -- the stored text of
+    a work, the raw nearest neighbours behind a search with their distances,
+    the per-concept evidence dump. They are genuinely useful while building,
+    and they have no place in a public deployment: what they return is the
+    data layer rather than the product.
+
+    Gated by `ENVIRONMENT` rather than by a role, because there is no role to
+    check -- Noema has readers and nothing else, and inventing an
+    administrator so that three routes can be hidden would be a larger change
+    than the problem deserves.
+
+    404 rather than 403, and the same 404 an unknown path gets. A 403 confirms
+    that something is there, which is information a production API owes nobody.
+    """
+    if get_settings().is_production:
+        raise _NO_SUCH_ROUTE

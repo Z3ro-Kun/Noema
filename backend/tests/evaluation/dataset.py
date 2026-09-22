@@ -643,7 +643,14 @@ EVALUATION_USERS: tuple[EvaluationUser, ...] = (
                 (("anilist", "5114"), ("gutenberg", "1661")),
                 (3, 2),
             ),
-            *_rated((("anilist", "30"),), (3,)),
+            # Neon Genesis Evangelion until the Phase 1AG concept audit: its
+            # only claim to `urban-modernity` was an AniList "Artificial
+            # Intelligence" tag at rank 13, via an alias that named a subject
+            # rather than a setting and was corrected out of the vocabulary.
+            # Nana carries the concept on its own evidence and, like NGE,
+            # carries no `crime-and-investigation` -- which is the premise
+            # this third work exists to supply.
+            *_rated((("anilist", "30028"),), (3,)),
         ),
     ),
     # --- T -----------------------------------------------------------------

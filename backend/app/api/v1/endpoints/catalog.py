@@ -19,7 +19,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user_optional, get_db
+from app.api.deps import get_current_user_optional, get_db, require_internal_surface
 from app.models import User
 from app.schemas.catalog import (
     ContainerRead,
@@ -150,7 +150,9 @@ async def read_work(
     return presentation
 
 
-@router.get("/works/{work_id}/internal", response_model=WorkDetail)
+@router.get("/works/{work_id}/internal", response_model=WorkDetail,
+    dependencies=[Depends(require_internal_surface)],
+)
 async def read_work_internal(
     work_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 ) -> WorkDetail:
@@ -237,7 +239,9 @@ async def read_work_relationships(
     ]
 
 
-@router.get("/containers/{container_id}/content-units", response_model=list[ContentUnitRead])
+@router.get("/containers/{container_id}/content-units", response_model=list[ContentUnitRead],
+    dependencies=[Depends(require_internal_surface)],
+)
 async def read_container_content_units(
     container_id: uuid.UUID,
     limit: int = Query(default=100, ge=1, le=500),
@@ -251,7 +255,9 @@ async def read_container_content_units(
     return [ContentUnitRead.model_validate(unit) for unit in units]
 
 
-@router.get("/works/{work_id}/concepts", response_model=list[WorkConceptRead])
+@router.get("/works/{work_id}/concepts", response_model=list[WorkConceptRead],
+    dependencies=[Depends(require_internal_surface)],
+)
 async def read_work_concepts(
     work_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 ) -> list[WorkConceptRead]:

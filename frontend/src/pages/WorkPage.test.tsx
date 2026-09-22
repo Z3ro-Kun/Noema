@@ -205,7 +205,7 @@ describe('WorkPage', () => {
       expect(rendered).not.toContain(forbidden)
     }
 
-    await user.click(screen.getByRole('button', { name: 'Open in the corpus viewer' }))
+    await user.click(screen.getByRole('button', { name: 'See where this record came from' }))
     expect(openViewer).toHaveBeenCalledWith('work-1')
   })
 

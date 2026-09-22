@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Home from './Home'
@@ -13,6 +13,7 @@ import {
   librarySummary,
   listPage,
   presentation,
+  recommendationResponse,
   userState,
 } from '../test/fixtures'
 import type { TasteDashboard } from '../types/api'
@@ -83,6 +84,11 @@ interface Options {
   dashboard?: TasteDashboard | null
   dashboardFails?: boolean
   worksFail?: boolean
+  /** The recommendation payload, or a failure the page must survive. */
+  recommendations?: unknown
+  recommendationsFail?: boolean
+  /** Marking a recommendation "not interested" fails on the server. */
+  dismissFails?: boolean
 }
 
 let requests: string[] = []
@@ -103,6 +109,24 @@ function mockApi(options: Options = {}) {
     if (url.includes('/auth/login') || url.includes('/auth/register')) return json(SESSION)
     if (url.includes('/auth/logout')) {
       return Promise.resolve({ ok: true, status: 204 } as Response)
+    }
+    if (url.includes('/api/v1/recommendations')) {
+      if (url.includes('/feedback')) {
+        if (options.dismissFails) return fail(503, 'could not save that')
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: () =>
+            Promise.resolve({
+              work_id: url.split('/recommendations/')[1].split('/')[0],
+              action: 'not_interested',
+              created_at: '2026-09-22T00:00:00Z',
+              suppressed_from_recommendations: true,
+            }),
+        } as Response)
+      }
+      if (options.recommendationsFail) return fail(503, 'unavailable')
+      return json(options.recommendations ?? recommendationResponse())
     }
     if (url.includes('/preferences/dashboard')) {
       if (options.dashboardFails) return fail(503, 'unavailable')
@@ -262,10 +286,15 @@ describe('Home, signed in', () => {
     ).toBeInTheDocument()
     // The greeting renders as soon as the session resolves; the sections wait
     // on the library request, so this has to be awaited rather than assumed.
-    expect(await screen.findByRole('heading', { name: 'Recent activity' })).toBeInTheDocument()
-    expect(screen.getByText('Cowboy Bebop')).toBeInTheDocument()
+    const activity = (
+      await screen.findByRole('heading', { name: 'Recent activity' })
+    ).closest('section')
+    expect(activity).not.toBeNull()
+    // Scoped to the section: the same work may also sit on the recommendation
+    // shelf, and "is it in my recent activity" is what this asks.
+    expect(within(activity as HTMLElement).getByText('Cowboy Bebop')).toBeInTheDocument()
     // Said as news rather than as a status token.
-    expect(screen.getByText('Currently watching')).toBeInTheDocument()
+    expect(within(activity as HTMLElement).getByText('Currently watching')).toBeInTheDocument()
   })
 
   it('tells a reader with an empty library where to start', async () => {
@@ -290,10 +319,55 @@ describe('Home, signed in', () => {
       await screen.findByText(/You particularly enjoy/),
     ).toBeInTheDocument()
     expect(screen.getByText('Psychological Depth')).toBeInTheDocument()
-    expect(screen.getByText(/From 6 rated works/)).toBeInTheDocument()
+    expect(screen.getByText(/From 6 works you have rated/)).toBeInTheDocument()
+    // What it rests on, in the reader's own ratings rather than as a grade.
+    expect(screen.getByText(/It appears across 5 of your ratings/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'View your full taste profile' }))
     expect(navigate).toHaveBeenCalledWith('taste')
+  })
+
+  it('shows no confidence grade anywhere on the taste band', async () => {
+    /**
+     * The band used to end each row with "moderate confidence". It said
+     * almost nothing -- the band is coarse enough that nearly every row read
+     * the same -- and it invited an internal number to be read as a
+     * percentage. The reader is told what the finding rests on instead.
+     */
+    renderPage({
+      signedIn: true,
+      dashboard: withPreference('Psychological Depth', 'psychological-depth'),
+    })
+
+    const band = (
+      await screen.findByRole('heading', { name: 'What Noema has noticed so far' })
+    ).closest('section') as HTMLElement
+    const rendered = band.textContent ?? ''
+
+    expect(rendered).not.toMatch(/confidence/i)
+    expect(rendered).not.toMatch(/evidence|signal|score|weight/i)
+    expect(rendered).not.toMatch(/\d+(\.\d+)?%/)
+  })
+
+  it('claims only what it shows', async () => {
+    /**
+     * "Read from your ratings, nothing else" has to be true of everything in
+     * the band. It is: every row comes from a rating-driven group, and
+     * reconsumption -- which is behaviour, not a verdict -- is reported on the
+     * profile page rather than here.
+     */
+    renderPage({
+      signedIn: true,
+      dashboard: withPreference('Psychological Depth', 'psychological-depth'),
+    })
+
+    const band = (
+      await screen.findByRole('heading', { name: 'What Noema has noticed so far' })
+    ).closest('section') as HTMLElement
+
+    expect(band.textContent).toContain('Read from your ratings, nothing else.')
+    expect(band.textContent).toContain('Your taste takes shape as you rate more.')
+    expect(band.textContent).not.toMatch(/went back to|returned to/i)
   })
 
   it('says to keep rating rather than inventing a preference', async () => {
@@ -313,7 +387,10 @@ describe('Home, signed in', () => {
       library: [presentation(ANIME, userState())],
     })
 
-    expect(await screen.findByText('Cowboy Bebop')).toBeInTheDocument()
+    const activity = (
+      await screen.findByRole('heading', { name: 'Recent activity' })
+    ).closest('section')
+    expect(within(activity as HTMLElement).getByText('Cowboy Bebop')).toBeInTheDocument()
     expect(screen.getByText('Keep rating works to build your taste profile.')).toBeInTheDocument()
   })
 
@@ -361,23 +438,250 @@ describe('Home, signed in', () => {
   })
 
   it('builds no shelf when there is no established preference', async () => {
-    renderPage({ signedIn: true, dashboard: EMPTY_DASHBOARD })
+    renderPage({
+      signedIn: true,
+      dashboard: EMPTY_DASHBOARD,
+      // A profile with no established preference cannot produce a
+      // recommendation either. Pairing them keeps the fixture a state the
+      // API could actually return.
+      recommendations: recommendationResponse(
+        { state: 'no_activity', established_preferences: 0, candidates_matched: 0 },
+        [],
+      ),
+    })
 
     await screen.findByText('Keep rating works to build your taste profile.')
     expect(screen.queryByText(/Because you enjoy/)).not.toBeInTheDocument()
     expect(requests.some((url) => url.includes('concept='))).toBe(false)
   })
 
-  it('never calls any of this a recommendation', async () => {
-    const { container } = renderPage({
+  it('never calls the theme shelf a recommendation', async () => {
+    /**
+     * The page now has both: a genuinely ranked shelf, and these theme
+     * filters. The distinction is the honest part and it has to survive --
+     * a reader can reproduce a theme shelf exactly in Discover, and cannot
+     * reproduce a recommendation, so only one of them may claim to be one.
+     */
+    renderPage({
       signedIn: true,
       dashboard: withPreference('Psychological Depth', 'psychological-depth'),
     })
 
-    await screen.findByRole('heading', { name: 'Because you enjoy Psychological Depth' })
-    const rendered = container.textContent ?? ''
+    const heading = await screen.findByRole('heading', {
+      name: 'Because you enjoy Psychological Depth',
+    })
+    const shelf = heading.closest('section')
+    expect(shelf).not.toBeNull()
+    const rendered = shelf?.textContent ?? ''
     expect(rendered).not.toMatch(/recommend/i)
     expect(rendered).not.toMatch(/picked for you|chosen for you|top match/i)
+    expect(rendered).toMatch(/the same list\s+anyone gets/i)
+  })
+
+  // --- recommended for you -------------------------------------------------
+
+  it('shows a recommendation with the preference that produced it', async () => {
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const shelf = screen
+      .getByRole('heading', { name: 'Recommended for you' })
+      .closest('section')
+
+    expect(shelf?.textContent).toContain('Because you enjoy Psychological Depth')
+    // A count the reader can check against their own profile, not a score.
+    expect(shelf?.textContent).toContain('From 4 works you rated')
+  })
+
+  it('declares a dislike the work also matches', async () => {
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+
+    expect(
+      screen.getByText(/Although Horror tends not to work for you/),
+    ).toBeInTheDocument()
+  })
+
+  it('shows no score, percentage or rank on the shelf', async () => {
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const shelf = screen
+      .getByRole('heading', { name: 'Recommended for you' })
+      .closest('section')
+    const rendered = shelf?.textContent ?? ''
+
+    expect(rendered).not.toMatch(/\d+%/)
+    expect(rendered).not.toMatch(/match score|confidence: 0|score/i)
+  })
+
+  it('asks a cold-start reader to rate rather than inventing a shelf', async () => {
+    renderPage({
+      signedIn: true,
+      recommendations: recommendationResponse(
+        { state: 'no_activity', established_preferences: 0, candidates_matched: 0 },
+        [],
+      ),
+    })
+
+    expect(
+      await screen.findByText('Rate a few works to start building your recommendations.'),
+    ).toBeInTheDocument()
+  })
+
+  it('says so when nothing has settled into a pattern yet', async () => {
+    renderPage({
+      signedIn: true,
+      recommendations: recommendationResponse(
+        { state: 'building', established_preferences: 0, candidates_matched: 0 },
+        [],
+      ),
+    })
+
+    expect(
+      await screen.findByText(/Nothing has settled into a pattern yet/),
+    ).toBeInTheDocument()
+  })
+
+  it('distinguishes an empty catalogue answer from an empty profile', async () => {
+    renderPage({
+      signedIn: true,
+      recommendations: recommendationResponse(
+        { state: 'no_matches', established_preferences: 3, candidates_matched: 0 },
+        [],
+      ),
+    })
+
+    expect(
+      await screen.findByText(/Nothing new in the catalogue carries the themes/),
+    ).toBeInTheDocument()
+  })
+
+  it('survives a recommendation failure without taking the page with it', async () => {
+    renderPage({ signedIn: true, recommendationsFail: true })
+
+    await screen.findByRole('heading', { name: 'Recent activity' })
+    expect(
+      screen.queryByRole('heading', { name: 'Recommended for you' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers "Not interested" on every recommendation card', async () => {
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const shelf = screen
+      .getByRole('heading', { name: 'Recommended for you' })
+      .closest('section') as HTMLElement
+
+    expect(
+      within(shelf).getAllByRole('button', { name: 'Not interested' }),
+    ).toHaveLength(2)
+  })
+
+  it('does not offer it on ordinary work cards', async () => {
+    /**
+     * It belongs to recommendation presentation. A theme shelf is a Discover
+     * filter, and "do not recommend this" would mean nothing there.
+     */
+    renderPage({
+      signedIn: true,
+      dashboard: withPreference('Psychological Depth', 'psychological-depth'),
+      library: [presentation(ANIME, userState())],
+    })
+
+    const theme = (
+      await screen.findByRole('heading', { name: 'Because you enjoy Psychological Depth' })
+    ).closest('section') as HTMLElement
+    const activity = (
+      screen.getByRole('heading', { name: 'Recent activity' })
+    ).closest('section') as HTMLElement
+
+    expect(
+      within(theme).queryByRole('button', { name: 'Not interested' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(activity).queryByRole('button', { name: 'Not interested' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('sends the dismissal to the work it was clicked on', async () => {
+    const user = userEvent.setup()
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    await user.click(screen.getAllByRole('button', { name: 'Not interested' })[0])
+
+    await waitFor(() =>
+      expect(
+        requests.some((url) => url.includes('/api/v1/recommendations/work-1/feedback')),
+      ).toBe(true),
+    )
+  })
+
+  it('removes the card once the dismissal is saved', async () => {
+    const user = userEvent.setup()
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const shelf = screen
+      .getByRole('heading', { name: 'Recommended for you' })
+      .closest('section') as HTMLElement
+    expect(within(shelf).getByText(/Because you enjoy Psychological Depth/)).toBeInTheDocument()
+
+    await user.click(within(shelf).getAllByRole('button', { name: 'Not interested' })[0])
+
+    await waitFor(() =>
+      expect(
+        within(shelf).queryByText(/Because you enjoy Psychological Depth/),
+      ).not.toBeInTheDocument(),
+    )
+    // The rest of the shelf stays exactly where it was.
+    expect(within(shelf).getByText(/Because you enjoy Mystery/)).toBeInTheDocument()
+  })
+
+  it('keeps the card and says so when the dismissal fails', async () => {
+    /** A card that vanished unsaved would return on the next load. */
+    const user = userEvent.setup()
+    renderPage({ signedIn: true, dismissFails: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const shelf = screen
+      .getByRole('heading', { name: 'Recommended for you' })
+      .closest('section') as HTMLElement
+
+    await user.click(within(shelf).getAllByRole('button', { name: 'Not interested' })[0])
+
+    expect(await screen.findByText('That did not save.')).toBeInTheDocument()
+    expect(
+      within(shelf).getByText(/Because you enjoy Psychological Depth/),
+    ).toBeInTheDocument()
+  })
+
+  it('never calls a dismissal a dislike', async () => {
+    const user = userEvent.setup()
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const shelf = screen
+      .getByRole('heading', { name: 'Recommended for you' })
+      .closest('section') as HTMLElement
+    await user.click(within(shelf).getAllByRole('button', { name: 'Not interested' })[0])
+
+    await waitFor(() => expect(requests.some((u) => u.includes('/feedback'))).toBe(true))
+    const rendered = shelf.textContent ?? ''
+    expect(rendered).not.toMatch(/dislike|hated|rated it|won.t like/i)
+  })
+
+  it('asks for recommendations with no user identifier', async () => {
+    renderPage({ signedIn: true })
+
+    await screen.findByRole('heading', { name: 'Recommended for you' })
+    const asked = requests.filter((url) => url.includes('/api/v1/recommendations'))
+
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).not.toMatch(/user/i)
   })
 
   // --- routes out ----------------------------------------------------------

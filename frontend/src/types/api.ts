@@ -65,10 +65,15 @@ export interface SearchHit {
   work_id: string
   work_title: string
   domain_slug: string
-  container_id: string
-  container_type: string
+  /**
+   * Null together when the unit describes the whole work rather than sitting
+   * anywhere inside it -- the fallback for works the canonical source
+   * catalogues no chapters or episodes for.
+   */
+  container_id: string | null
+  container_type: string | null
   container_title: string | null
-  container_sequence_number: number
+  container_sequence_number: number | null
   content_unit_id: string | null
   unit_type: string | null
   sequence_number: number | null
@@ -93,6 +98,51 @@ export interface SemanticSearchResponse {
   text_tier: string | null
   representation: string
   hits: SearchHit[]
+}
+
+/**
+ * One work that matched a meaning search.
+ *
+ * Extends `WorkPresentation` on the wire, so a search result renders with the
+ * same card as anywhere else and keeps the same canonical/personal split.
+ * `similarity` is the strongest underlying passage similarity -- not an
+ * average, not a blend, and not a claim that the work is *about* the query.
+ */
+export interface WorkSearchEvidence {
+  /** Null together when the strongest passage describes the work as a whole. */
+  container_id: string | null
+  container_type: string | null
+  container_title: string | null
+  container_sequence_number: number | null
+  text_tier: 'primary' | 'summary'
+  /** How many candidate passages belonged to this work. Context, not a score. */
+  matching_passages: number
+  /** Short by contract. The corpus is not a reading interface. */
+  excerpt: string
+  source_name: string | null
+  licence: string | null
+}
+
+export interface WorkSearchHit extends WorkPresentation {
+  similarity: number
+  distance: number
+  representation: 'content_unit' | 'contextual_passage'
+  evidence: WorkSearchEvidence
+}
+
+/** `top_k` counts unique works here, never raw passages. */
+export interface WorkSearchResponse {
+  query: string
+  model_name: string
+  metric: string
+  result_kind: string
+  top_k: number
+  domain: string | null
+  text_tier: string | null
+  representation: string
+  /** How many raw passages were examined to produce these works. */
+  candidates_examined: number
+  results: WorkSearchHit[]
 }
 
 export interface Entity {
@@ -548,4 +598,68 @@ export interface PreferenceFeedback {
 
 export interface PreferenceFeedbackList {
   items: PreferenceFeedback[]
+}
+
+/** --- recommendations ---------------------------------------------------
+ *
+ * Content-based discovery. A recommendation is a catalogue work the reader
+ * has not met, chosen because it carries concepts their own established
+ * preferences are about -- the same preferences the taste profile shows.
+ *
+ * What the wire carries is the work, the preferences that matched it and a
+ * confidence band. It carries no candidate score, no preference evidence
+ * value and no coefficient: a reader is owed a reason they can check against
+ * their own profile, not a number they would have to trust.
+ */
+
+/** Where a reader is, in the profile's own vocabulary plus one of its own. */
+export type RecommendationState =
+  | 'no_activity'
+  | 'no_ratings'
+  | 'building'
+  /** Evidence exists; nothing new in the catalogue carries it. */
+  | 'no_matches'
+  | 'personalized'
+
+/** One established preference a recommended work matched. */
+export interface RecommendationReason {
+  presentation_key: PresentationKey
+  /** `positive` for a reason, `negative` for a caution. */
+  direction: PreferenceDirection
+  concepts: TasteFeature[]
+  confidence_band: ConfidenceBand
+  /** The reader's own rated works behind this preference. A checkable count. */
+  rated_works: number
+}
+
+export interface Recommendation extends WorkPresentation {
+  reasons: RecommendationReason[]
+  /** Established dislikes this work also matches. Declared, not hidden. */
+  cautions: RecommendationReason[]
+  confidence_band: ConfidenceBand
+}
+
+export interface RecommendationSummary {
+  state: RecommendationState
+  established_preferences: number
+  candidates_considered: number
+  candidates_matched: number
+}
+
+export interface RecommendationResponse {
+  summary: RecommendationSummary
+  recommendations: Recommendation[]
+}
+
+/**
+ * A standing instruction about one work's recommendability.
+ *
+ * Deliberately not a preference: "not interested" means "do not recommend
+ * this to me", and it reaches nothing the taste profile is built from.
+ */
+export interface RecommendationFeedback {
+  work_id: string
+  action: 'not_interested'
+  created_at: string
+  suppressed_from_recommendations: boolean
 }

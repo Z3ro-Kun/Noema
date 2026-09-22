@@ -9,8 +9,16 @@ import { fetchPreferenceFeedback, submitPreferenceFeedback } from '../api/feedba
 import { fetchPreferenceOverview } from '../api/preferences'
 import { useSession } from '../auth/session'
 import { statusLabel } from '../lib/labels'
+import {
+  BUCKET_ORDER as TASTE_BUCKET_ORDER,
+  bucketVoice,
+  formatList,
+  hedge,
+  returnedToNote,
+  supportDetail,
+  supportLine,
+} from '../lib/taste'
 import type {
-  ConfidenceBand,
   ContributingWork,
   EvidenceCounts,
   ExposureSignal,
@@ -106,62 +114,8 @@ interface TasteProfileProps {
 
 type Bucket = 'strongly_likes' | 'mildly_likes' | 'dislikes' | 'emerging'
 
-interface SectionCopy {
-  heading: string
-  /** One sentence saying what membership of this group means. */
-  meaning: string
-}
-
-/**
- * The wording for each group.
- *
- * `mildly_likes` carries the load here: its sentence exists to stop the
- * section reading as "Noema is unsure", which is a different claim and lives
- * on the other axis entirely.
- */
-const SECTIONS: Record<Bucket, SectionCopy> = {
-  strongly_likes: {
-    heading: 'You particularly enjoy',
-    meaning: 'What you have rated points clearly in this direction.',
-  },
-  mildly_likes: {
-    heading: 'You also enjoy, more mildly',
-    meaning:
-      'Positive, just less pronounced than the group above. That is about how much you liked these, not about how sure Noema is.',
-  },
-  dislikes: {
-    heading: 'You tend not to enjoy',
-    meaning:
-      'Your ratings run the other way here. Noema does not know why, and is not guessing.',
-  },
-  emerging: {
-    heading: 'Noema is beginning to notice',
-    meaning:
-      'Too early to call these preferences. They are shown so you can see what is accumulating.',
-  },
-}
-
 /** The order the groups are read in. The backend's semantics, not a ranking. */
-const BUCKET_ORDER: Bucket[] = ['strongly_likes', 'mildly_likes', 'dislikes', 'emerging']
-
-const CONFIDENCE_LABELS: Record<ConfidenceBand, string> = {
-  low: 'Low confidence',
-  moderate: 'Moderate confidence',
-  high: 'High confidence',
-}
-
-/**
- * What a band actually means, for the details panel.
- *
- * Phrased as a statement about the evidence, never about the strength of the
- * preference, and never as a percentage -- 0.54 on screen invites being read
- * as "54% certain", which is not what the number means.
- */
-const CONFIDENCE_MEANINGS: Record<ConfidenceBand, string> = {
-  low: 'Only a rating or two supports this so far.',
-  moderate: 'Several of your ratings support this, and they mostly agree.',
-  high: 'Many of your ratings support this, and they agree closely.',
-}
+const BUCKET_ORDER = TASTE_BUCKET_ORDER
 
 /**
  * Sentences for the higher-level observations.
@@ -191,13 +145,6 @@ function standoutSentence(observation: TasteStandoutObservation): string {
     default:
       return names.join(' and ')
   }
-}
-
-/** "Anime and Literature", "Anime, Manga & Manhwa and Literature". */
-function formatList(values: string[]): string {
-  if (values.length === 0) return ''
-  if (values.length === 1) return values[0]
-  return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -256,27 +203,28 @@ function PreferenceName({ item }: { item: TastePreferenceItem }) {
 }
 
 /**
- * The context a reader can check the claim against.
+ * What the reading rests on, in the reader's own ratings.
  *
- * Counts and media, in a sentence. Never the evidence value, the normalized
- * ratings, the baseline, the spread or anything else the layers below
- * computed -- the DTO does not carry them and this line would not print them
- * if it did.
+ * A sentence, not a readout. It used to open "Based on 5 rated works in
+ * Anime and Manga & Manhwa", which is the same fact said as a query result.
+ * The wording lives in `lib/taste` so this page and the Home band cannot
+ * describe the same finding differently.
+ *
+ * Returning to something is reported on its own line, because it is
+ * behaviour rather than a verdict and is not what put the finding here.
  */
-function EvidenceLine({ item }: { item: TastePreferenceItem }) {
-  const { evidence_summary: evidence } = item
-  const parts: string[] = [plural(evidence.rated_works, 'rated work', 'rated works')]
-  if (evidence.domains.length > 1) {
-    parts.push(`across ${formatList(evidence.domains)}`)
-  } else if (evidence.domains.length === 1) {
-    parts.push(`in ${evidence.domains[0]}`)
-  }
+function SupportLine({ item, bucket }: { item: TastePreferenceItem; bucket: Bucket }) {
+  const caveat = hedge(item.confidence_band, bucket)
 
   return (
-    <p className="mt-3 text-[0.88rem] leading-relaxed text-paper-dim">
-      Based on {parts.join(' ')}
-      {evidence.includes_reconsumed_works && ', including work you came back to'}.
-    </p>
+    <>
+      <p className="mt-3 text-[0.88rem] leading-relaxed text-paper-dim">
+        {supportLine(item.evidence_summary)}
+      </p>
+      {caveat && (
+        <p className="mt-2 text-[0.8rem] leading-relaxed text-paper-faint">{caveat}</p>
+      )}
+    </>
   )
 }
 
@@ -477,10 +425,10 @@ function Preference({
         <PreferenceName item={item} />
       </h3>
 
-      <EvidenceLine item={item} />
+      <SupportLine item={item} bucket={bucket} />
       {evidence.has_mixed_evidence && (
         <p className="mt-2 text-[0.8rem] text-paper-faint">
-          Your ratings behind this do not all agree.
+          Your ratings here do not all point the same way.
         </p>
       )}
 
@@ -491,14 +439,14 @@ function Preference({
 
         <div className="mt-5 border-l border-paper/10 pl-6 text-[0.85rem] leading-relaxed text-paper-dim">
           <div className="space-y-2">
-            <p>{plural(evidence.rated_works, 'work you rated', 'works you rated')}.</p>
             <p>
-              {plural(
-                evidence.supporting_works,
-                'work is associated with it',
-                'works are associated with it',
-              )}{' '}
-              in total, rated or not.
+              {plural(evidence.rated_works, 'work you rated', 'works you rated')} carries
+              this.
+            </p>
+            <p>
+              It turns up in{' '}
+              {plural(evidence.supporting_works, 'work', 'works')} you have come across
+              in all, rated or not.
             </p>
             {evidence.domains.length > 0 && <p>Seen in {formatList(evidence.domains)}.</p>}
             {/*
@@ -508,7 +456,10 @@ function Preference({
               two -- so the boolean is the fallback, not the headline.
             */}
             {evidence.includes_reconsumed_works && signal === undefined && (
-              <p>Some of these are works you returned to. Repetition is context, not a rating.</p>
+              <p>
+                {returnedToNote(evidence)} Going back says you kept reading, not that
+                you liked it more.
+              </p>
             )}
           </div>
 
@@ -528,10 +479,16 @@ function Preference({
 
           {signal && <ContributingWorks works={signal.contributions} />}
 
+          {/*
+            Where the confidence grade used to be. The band still arrives on
+            every item and still means what it meant; what changed is that a
+            reader is told how much of their own history points this way,
+            which is the thing they can actually check, rather than a word
+            that graded it for them.
+          */}
           <p className="mt-5 text-paper-faint">
-            {CONFIDENCE_LABELS[item.confidence_band]} ·{' '}
-            {CONFIDENCE_MEANINGS[item.confidence_band]} This is about how much
-            evidence there is, not how much you liked it.
+            {supportDetail(item.confidence_band, bucket)} How strongly you liked these
+            is a separate question, and it is what decided which group this sits in.
           </p>
           {item.also_supported_by.length > 0 && (
             <p className="mt-2 text-paper-faint">
@@ -612,13 +569,13 @@ function Section({
   // rendered as an empty block.
   if (items.length === 0) return null
 
-  const copy = SECTIONS[bucket]
+  const voice = bucketVoice(bucket)
   return (
     <Band
       id={`section-${bucket}`}
-      eyebrow={bucket === 'emerging' ? 'Not yet a preference' : 'What your ratings show'}
-      heading={copy.heading}
-      meaning={copy.meaning}
+      eyebrow={voice.eyebrow}
+      heading={voice.heading}
+      meaning={voice.meaning}
     >
       <div className="divide-y divide-paper/10 border-t border-paper/10">
         {items.map((item) => (
@@ -666,8 +623,7 @@ function WhatStandsOut({ observations }: { observations: TasteStandoutObservatio
             {observation.rated_works !== null && (
               <p className="mt-3 text-[0.62rem] uppercase tracking-label text-paper-faint">
                 From {plural(observation.rated_works, 'rated work', 'rated works')}
-                {observation.confidence_band &&
-                  ` · ${CONFIDENCE_LABELS[observation.confidence_band]}`}
+
               </p>
             )}
           </li>
@@ -860,12 +816,12 @@ export default function TasteProfile({ onNavigate, onOpenLibrary }: TasteProfile
               Your Taste
             </h1>
             <p className="mt-6 max-w-2xl font-display text-lg font-light leading-relaxed text-paper-dim md:text-xl">
-              This describes what you tend to enjoy across the works you have rated and
-              engaged with — not who you are.
+              What you tend to enjoy, read from the works you have rated — not who
+              you are.
             </p>
             {summary && summary.rated_works > 0 && (
               <p className="mt-8 text-[0.66rem] uppercase tracking-label text-paper-faint">
-                Built from {plural(summary.rated_works, 'rated work', 'rated works')}
+                Built from {plural(summary.rated_works, 'rating', 'ratings')}
               </p>
             )}
           </div>

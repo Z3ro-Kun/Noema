@@ -21,7 +21,7 @@ API follows.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_internal_surface
 from app.models import User
 from app.schemas.preference import ConceptEvidenceRead, PreferenceProfileRead
 from app.schemas.preference_feedback import (
@@ -225,7 +225,11 @@ async def read_preference_feedback_history(
     )
 
 
-@router.get("", response_model=PreferenceProfileRead)
+@router.get(
+    "",
+    response_model=PreferenceProfileRead,
+    dependencies=[Depends(require_internal_surface)],
+)
 async def read_preference_evidence(
     min_rated: int = Query(
         default=0,
@@ -255,7 +259,11 @@ async def read_preference_evidence(
     )
 
 
-@router.get("/{concept_slug}", response_model=ConceptEvidenceRead)
+@router.get(
+    "/{concept_slug}",
+    response_model=ConceptEvidenceRead,
+    dependencies=[Depends(require_internal_surface)],
+)
 async def read_concept_evidence(
     concept_slug: str,
     user: User = Depends(get_current_user),

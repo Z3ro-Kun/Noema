@@ -12,12 +12,13 @@ adds to the history instead of overwriting it.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core import clock
 from app.models import (
     EVENT_ADDED,
     EVENT_RATING_CHANGED,
@@ -83,7 +84,13 @@ class NoReconsumptionToUndoError(LibraryError):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    """The event clock: strictly increasing, so history is a sequence.
+
+    Not `datetime.now()`. See `app.core.clock` -- events written inside one
+    request would otherwise share a timestamp and the log would order by a
+    random uuid.
+    """
+    return clock.now()
 
 
 def _record(
@@ -140,7 +147,25 @@ async def list_library(
         select(UserContentInteraction)
         .options(selectinload(UserContentInteraction.work).selectinload(Work.domain))
         .where(UserContentInteraction.user_id == user_id)
-        .order_by(UserContentInteraction.updated_at.desc())
+        # Most recently touched first, and `work_id` to break the ties.
+        #
+        # `updated_at` is written by the column's server-side `onupdate`,
+        # which is `now()` -- transaction-start time in Postgres, not
+        # statement time. Two entries touched in one transaction therefore
+        # hold the *same* instant, and on a tie the database is free to
+        # return them in any order it likes: the same request twice could
+        # page them differently, and an entry could appear on page one and
+        # again on page two.
+        #
+        # `work_id` is the canonical identifier of what the entry points at,
+        # and (user_id, work_id) is unique -- so it is stable across requests
+        # and never itself ties. It changes nothing about what `updated_at`
+        # means or how the library ranks; it only decides what happens after
+        # the ranking has run out of things to say.
+        .order_by(
+            UserContentInteraction.updated_at.desc(),
+            UserContentInteraction.work_id.asc(),
+        )
     )
     if not include_removed:
         query = query.where(UserContentInteraction.removed_at.is_(None))
@@ -397,16 +422,11 @@ async def record_reconsumption(
             "only a completed work can record another completion"
         )
 
-    restarted = _apply_status(interaction, session, STATUS_IN_PROGRESS)
-    finished = _apply_status(interaction, session, STATUS_COMPLETED)
-
-    # The event log is ordered by `occurred_at`, and these two are written
-    # inside one request: on a platform whose clock ticks in milliseconds
-    # they can carry the same timestamp, and the tie would then be broken by
-    # a random uuid -- which reads as "completed, then started again".
-    # Separating them is what keeps the history a sequence.
-    if finished.occurred_at <= restarted.occurred_at:
-        finished.occurred_at = restarted.occurred_at + timedelta(microseconds=1)
+    # Two events, in this order, inside one request. `_now()` keeps them
+    # apart -- which is the whole reason the event clock is not the wall
+    # clock; a tie here would read as "completed, then started again".
+    _apply_status(interaction, session, STATUS_IN_PROGRESS)
+    _apply_status(interaction, session, STATUS_COMPLETED)
 
     await session.flush()
     return interaction

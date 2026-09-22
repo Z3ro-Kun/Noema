@@ -131,6 +131,77 @@ body {
 }
 
 /**
+ * The same atmosphere, over the light band.
+ *
+ * `.atmosphere` is built for type in `paper` on `ink`. The taste band inverts
+ * that -- ink on paper -- and dropping the dark wash behind it would either
+ * wreck the contrast or turn the section into a different website.
+ *
+ * So this is the same composition in the same four colours, weighted for a
+ * light field: the `accent` lamplight stays high and right where it sits on
+ * the dark band, and a `surface` pool cools the lower left so the type column
+ * has something to sit on.
+ *
+ * **The alphas are chosen from a measurement, not by eye.** Composite every
+ * layer at full strength over the darkest end of the base gradient -- which
+ * the geometry never actually does, since the lamplight peaks top-right and
+ * the pool bottom-left -- and the field bottoms out at #c4bdae. On that,
+ * `ink` is 6.50:1 and `surface` is 4.67:1, so both clear AA for body text at
+ * the worst point the wash can reach. On flat paper they are 8.42 and 6.05.
+ *
+ * Nothing here is load-bearing. The base colour underneath is `paper`, so a
+ * browser that paints no gradient shows the flat light band the section was
+ * before, at its original contrast. It depicts nothing, is attached to no
+ * work, and adds no asset and no request -- which is what keeps it
+ * atmosphere rather than a collage of covers.
+ */
+.atmosphere-paper {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--color-paper);
+  background-image:
+    /* Lamplight, high and right -- the dark band's principal light, warmed
+       down to something the paper can hold. */
+    radial-gradient(58% 78% at 82% 8%, rgb(162 123 92 / 0.1) 0%, rgb(162 123 92 / 0) 62%),
+    /* A cooler pool low and left, so the field has two temperatures rather
+       than one tint. */
+    radial-gradient(64% 72% at 6% 96%, rgb(63 79 68 / 0.06) 0%, rgb(63 79 68 / 0) 66%),
+    /* A broad haze along the right edge, so the band does not end flat. */
+    radial-gradient(84% 110% at 104% 52%, rgb(63 79 68 / 0.04) 0%, rgb(63 79 68 / 0) 72%),
+    linear-gradient(168deg, rgb(220 215 201 / 1) 0%, rgb(216 210 196 / 1) 100%);
+}
+
+/* The counterpart of `.atmosphere::before`: a soft lift over the type column
+   rather than a vignette, since darkening the corners of a light field reads
+   as dirt. It only ever moves the field back toward paper. */
+.atmosphere-paper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 90% at 26% 40%,
+    rgb(220 215 201 / 0.7) 0%,
+    rgb(220 215 201 / 0.18) 54%,
+    rgb(220 215 201 / 0) 100%
+  );
+}
+
+/* Grain, far lighter than the dark band's and multiplied rather than
+   overlaid: at 0.05 over paper it reads as dirt rather than as tooth. */
+.grain-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/**
  * Legibility scrims. They sit between the atmosphere and the text column so
  * the type keeps its contrast at every width.
  */

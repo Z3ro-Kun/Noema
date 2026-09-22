@@ -20,6 +20,7 @@ import {
 import { relationshipDates } from '../lib/dates'
 import { statusLabel } from '../lib/labels'
 import type { LibraryHistory, LibraryStatus, WorkPresentation } from '../types/api'
+import { DEV_SURFACES } from '../lib/config'
 
 /**
  * One work, and the reader's own relationship with it.
@@ -508,15 +509,23 @@ export default function WorkPage({
                   Record from {work.source}.{' '}
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => onOpenCorpusViewer(work.id)}
-                className="border-b border-paper/25 text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Open in the corpus viewer
-              </button>{' '}
-              — the development surface, with ingestion provenance and the stored
-              text.
+              {/*
+                The record viewer shows stored text and ingestion state, so it
+                exists in a development build only -- and so does the link.
+                Attribution above it is owed to a reader and stays either way.
+              */}
+              {DEV_SURFACES && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenCorpusViewer(work.id)}
+                    className="border-b border-paper/25 text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    See where this record came from
+                  </button>{' '}
+                  — a development surface, with the source details and the stored text.
+                </>
+              )}
             </p>
           </section>
         </>

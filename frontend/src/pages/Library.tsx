@@ -117,6 +117,22 @@ const GROUPS: { status: LibraryStatus; heading: string; empty: string }[] = [
   },
 ]
 
+/**
+ * The domains a reader can narrow to.
+ *
+ * Taken from the same three the rest of the product uses rather than fetched:
+ * the library's domains are a closed vocabulary, and a request to discover
+ * them would be a request made to say something already known. The filter is
+ * server-side -- `?domain=` composes with `?status=` in SQL -- so narrowing
+ * never means downloading a library and hiding part of it.
+ */
+const DOMAINS: { value: string; label: string }[] = [
+  { value: '', label: 'All media' },
+  { value: 'literature', label: 'Literature' },
+  { value: 'anime', label: 'Anime' },
+  { value: 'manhwa', label: 'Manga & Manhwa' },
+]
+
 const PAGE_SIZE = 24
 /** How many of a group to show before sending the reader to its own tab. */
 const PREVIEW_SIZE = 6
@@ -340,6 +356,7 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
   const session = useSession()
   const [tab, setTab] = useState<LibraryStatus | 'all'>('all')
   const [showRemoved, setShowRemoved] = useState(false)
+  const [domain, setDomain] = useState('')
   const [page, setPage] = useState(1)
 
   /**
@@ -374,7 +391,12 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
         // same response as its rows, so the two cannot disagree.
         const pages = await Promise.all(
           GROUPS.map((group) =>
-            fetchLibrary({ status: group.status, page: 1, page_size: PREVIEW_SIZE }),
+            fetchLibrary({
+              status: group.status,
+              domain: domain || null,
+              page: 1,
+              page_size: PREVIEW_SIZE,
+            }),
           ),
         )
         setShown({
@@ -386,14 +408,24 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
       } else {
         setShown({
           tab,
-          entries: await fetchLibrary({ status: tab, page, page_size: PAGE_SIZE }),
+          entries: await fetchLibrary({
+            status: tab,
+            domain: domain || null,
+            page,
+            page_size: PAGE_SIZE,
+          }),
         })
       }
 
       setRemoved(
         showRemoved
           ? (
-              await fetchLibrary({ include_removed: true, page: 1, page_size: PAGE_SIZE })
+              await fetchLibrary({
+                include_removed: true,
+                domain: domain || null,
+                page: 1,
+                page_size: PAGE_SIZE,
+              })
             ).items.filter((entry) => entry.user_state && !entry.user_state.in_library)
           : [],
       )
@@ -407,7 +439,7 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
     } finally {
       setLoading(false)
     }
-  }, [tab, showRemoved, page])
+  }, [tab, showRemoved, domain, page])
 
   useEffect(() => {
     if (session.account) void load()
@@ -531,6 +563,51 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
                   </button>
                 )
               })}
+            </div>
+
+            {/*
+              Beside the tabs rather than above them: status and medium are
+              two narrowings of one list, and they compose. Changing either
+              returns to the first page, because page three of the old filter
+              is not a page of the new one.
+            */}
+            <div className="flex flex-wrap items-end gap-x-8 gap-y-3 pt-6">
+              <div>
+                <label
+                  htmlFor="library-domain"
+                  className="block text-[0.62rem] uppercase tracking-label text-paper-faint"
+                >
+                  Medium
+                </label>
+                <select
+                  id="library-domain"
+                  value={domain}
+                  onChange={(event) => {
+                    setDomain(event.target.value)
+                    setPage(1)
+                  }}
+                  className="mt-2 block w-full min-w-[11rem] appearance-none border-b border-paper/20 bg-transparent py-2 pr-6 text-[0.9rem] text-paper transition-colors duration-200 hover:border-paper/40 focus:border-accent focus-visible:outline-none sm:w-52"
+                >
+                  {DOMAINS.map((option) => (
+                    <option key={option.value} value={option.value} className="bg-ink text-paper">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {domain && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDomain('')
+                    setPage(1)
+                  }}
+                  className="border-b border-paper/25 pb-1 text-[0.8rem] text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Show all media
+                </button>
+              )}
             </div>
 
             {loading && !shown && (

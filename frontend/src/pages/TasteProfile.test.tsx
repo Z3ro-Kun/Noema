@@ -241,7 +241,9 @@ describe('TasteProfile', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Your Taste' }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/works you have rated/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/What you tend to enjoy, read from the works you have rated/),
+    ).toBeInTheDocument()
   })
 
   it('shows a loading state while the profile is being derived', async () => {
@@ -287,9 +289,9 @@ describe('TasteProfile', () => {
     })
 
     expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /You also enjoy, more mildly/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /You tend not to enjoy/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Noema is beginning to notice/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /You seem drawn to/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /You tend to avoid/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Something Noema is noticing/ })).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { level: 3, name: 'Psychological Depth' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'Tragedy' })).toBeInTheDocument()
@@ -309,7 +311,7 @@ describe('TasteProfile', () => {
   it('says a mild preference is mild, not uncertain', async () => {
     renderPage({ profile: dashboard({ mildly_likes: [item({ confidence_band: 'high' })] }) })
 
-    const meaning = await screen.findByText(/Positive, just less pronounced/)
+    const meaning = await screen.findByText(/less pronounced/)
     // The distinction the whole section exists to hold.
     expect(meaning).toHaveTextContent(/how much you liked these, not about how sure Noema is/)
   })
@@ -327,7 +329,7 @@ describe('TasteProfile', () => {
       }),
     })
 
-    expect(await screen.findByText(/Too early to call these preferences/)).toBeInTheDocument()
+    expect(await screen.findByText(/Too early to call these/)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /You particularly enjoy/ })).not.toBeInTheDocument()
   })
 
@@ -361,17 +363,29 @@ describe('TasteProfile', () => {
     expect(screen.queryByText(/possibly enjoy/i)).not.toBeInTheDocument()
   })
 
-  it('keeps confidence out of the primary hierarchy and inside the details', async () => {
+  it('shows no confidence grade, open or closed', async () => {
+    /**
+     * The band still arrives on every item and still means what it meant.
+     * What a reader sees instead is how much of their own history points
+     * this way -- the thing they can check -- rather than a word that graded
+     * it for them.
+     */
     const user = userEvent.setup()
-    renderPage({ profile: dashboard({ strongly_likes: [item({ confidence_band: 'moderate' })] }) })
+    const { container } = renderPage({
+      profile: dashboard({ strongly_likes: [item({ confidence_band: 'moderate' })] }),
+    })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    expect(screen.queryByText(/Moderate confidence/)).not.toBeVisible()
+    expect(container.textContent).not.toMatch(/confidence/i)
 
     await user.click(screen.getByText(/Why does Noema think this/))
-    expect(screen.getByText(/Moderate confidence/)).toBeVisible()
+    expect(container.textContent).not.toMatch(/confidence/i)
     expect(
-      screen.getByText(/how much evidence there is, not how much you liked it/),
+      screen.getByText(/Several of your ratings point this way, and they mostly agree/),
+    ).toBeInTheDocument()
+    // Strength and how much is behind it stay two different questions.
+    expect(
+      screen.getByText(/How strongly you liked these is a separate question/),
     ).toBeInTheDocument()
   })
 
@@ -418,11 +432,13 @@ describe('TasteProfile', () => {
       }),
     })
 
-    expect(await screen.findByText(/Based on 5 rated works across Anime and Literature/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/You've rated 5 works across Anime and Literature that share it/),
+    ).toBeInTheDocument()
 
     await user.click(screen.getByText(/Why does Noema think this/))
-    expect(screen.getByText(/7 works are associated with it/)).toBeInTheDocument()
-    expect(screen.getByText(/Repetition is context, not a rating/)).toBeInTheDocument()
+    expect(screen.getByText(/It turns up in 7 works you have come across/)).toBeInTheDocument()
+    expect(screen.getByText(/Going back says you kept reading/)).toBeInTheDocument()
   })
 
   it('says when the evidence cannot tell two findings apart', async () => {
@@ -444,7 +460,7 @@ describe('TasteProfile', () => {
       }),
     })
 
-    expect(await screen.findByText(/do not all agree/)).toBeInTheDocument()
+    expect(await screen.findByText(/do not all point the same way/)).toBeInTheDocument()
   })
 
   // --- what stands out -----------------------------------------------------
@@ -547,7 +563,7 @@ describe('TasteProfile', () => {
 
     expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What stands out' })).toBeInTheDocument()
-    expect(screen.getByText(/Built from 6 rated works/)).toBeInTheDocument()
+    expect(screen.getByText(/Built from 6 ratings/)).toBeInTheDocument()
   })
 
   // --- the evidence source -------------------------------------------------
@@ -690,7 +706,7 @@ describe('TasteProfile', () => {
     expect(
       screen.getByText(/Returned to 1 of them \(6 completions in total\)/),
     ).toBeInTheDocument()
-    expect(screen.queryByText(/Some of these are works you returned to/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Some of these are works you went back to/)).not.toBeInTheDocument()
   })
 
   it('keeps the plain statement when there is no count to give', async () => {
@@ -717,7 +733,7 @@ describe('TasteProfile', () => {
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
     await user.click(screen.getByText(/Why does Noema think this/))
 
-    expect(screen.getByText(/Some of these are works you returned to/)).toBeInTheDocument()
+    expect(screen.getByText(/Some of these are works you went back to/)).toBeInTheDocument()
   })
 
   it('never promotes a low-confidence overview signal into a group', async () => {
@@ -930,7 +946,7 @@ describe('TasteProfile', () => {
     const user = userEvent.setup()
     renderPage({ profile: dashboard({ emerging: [item()] }) })
 
-    await screen.findByRole('heading', { name: /Noema is beginning to notice/ })
+    await screen.findByRole('heading', { name: /Something Noema is noticing/ })
     await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.queryByText('Does this feel right?')).not.toBeInTheDocument()

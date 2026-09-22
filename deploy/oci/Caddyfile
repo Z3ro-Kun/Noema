@@ -1,0 +1,72 @@
+# Noema's public edge: TLS, the SPA, and the API, on one hostname.
+#
+# One hostname rather than two (noema.example + api.noema.example) because it
+# is the simpler thing that works. The browser then talks to its own origin,
+# so CORS is never exercised in practice -- the allowlist is still configured
+# and still correct, it just stops being a thing that can be got wrong at 2am.
+# One certificate, one DNS record, one thing to debug.
+#
+# If the API is later split onto its own hostname, set VITE_API_URL to that
+# origin, add CORS_ORIGINS for the frontend's origin, and give the second name
+# its own site block. Nothing in the application assumes either arrangement.
+#
+# Caddy obtains and renews a Let's Encrypt certificate on its own, which is
+# why this deployment needs neither an OCI Load Balancer nor OCI Certificates.
+# It requires ports 80 and 443 reachable from the internet and the DNS A/AAAA
+# record already pointing here -- ACME's HTTP-01 challenge arrives on :80.
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment while testing DNS or firewall rules. Let's Encrypt rate-limits
+	# failed authorizations hard, and the staging CA does not.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$NOEMA_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# --- the API ----------------------------------------------------------
+	#
+	# Ordered before the static handler, and matched on a prefix, so nothing
+	# under /api can ever be answered by the SPA fallback below. A 200 with an
+	# HTML body where JSON was expected is a genuinely confusing failure.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# The unversioned health alias, for anything checking from outside.
+	handle /health {
+		reverse_proxy api:8000
+	}
+
+	# --- the application --------------------------------------------------
+	handle {
+		root * /srv/www
+
+		# Fingerprinted assets are immutable: Vite puts the content hash in
+		# the filename, so a stale one can never be served for new content.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+
+		# index.html must not be cached, or a browser keeps loading the old
+		# bundle after a deploy and nothing the deploy did is visible.
+		@html path / /index.html
+		header @html Cache-Control "no-cache"
+
+		# The SPA fallback. Every address Noema has -- /discover, /works/<id>,
+		# /library, /taste, /login -- is routed in the browser and has no file
+		# here, so an unmatched path serves index.html with a 200 rather than
+		# a 404. Without this, a direct link, a refresh, and every deep link
+		# that survives the login redirect all break.
+		try_files {path} /index.html
+		file_server
+	}
+}

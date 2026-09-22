@@ -53,6 +53,11 @@ class Work(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     domain: Mapped["Domain"] = relationship(back_populates="works")
     creators: Mapped[list["WorkCreator"]] = relationship(back_populates="work")
     containers: Mapped[list["Container"]] = relationship(back_populates="work")
+    # Units that describe the work as a whole rather than any one container.
+    # Empty for nearly every work: see `ContentUnit`.
+    content_units: Mapped[list["ContentUnit"]] = relationship(  # noqa: F821
+        back_populates="work"
+    )
 
 
 class WorkCreator(Base):

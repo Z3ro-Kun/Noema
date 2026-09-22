@@ -7,11 +7,11 @@ import { resetSessionForTests } from '../auth/session'
 import {
   ANIME,
   FACETS,
-  SEARCH_RESPONSE,
   WORK,
   listPage,
   presentation,
   userState,
+  workSearchResponse,
 } from '../test/fixtures'
 
 /**
@@ -55,7 +55,7 @@ function mockApi(options: Options = {}) {
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
 
     if (url.includes('/works/facets')) return json(options.facets ?? FACETS)
-    if (url.includes('/search/semantic')) {
+    if (url.includes('/search/works')) {
       if (options.semanticUnreachable) {
         // What a dropped connection looks like to `fetch`.
         return Promise.reject(new TypeError('Failed to fetch'))
@@ -67,7 +67,7 @@ function mockApi(options: Options = {}) {
           json: () => Promise.resolve({}),
         } as Response)
       }
-      return json(options.semantic ?? SEARCH_RESPONSE)
+      return json(options.semantic ?? workSearchResponse())
     }
     if (url.includes('/api/v1/works')) {
       if (options.hangList) return new Promise<Response>(() => {})
@@ -180,14 +180,12 @@ describe('Discover', () => {
       expect(rendered).not.toContain(forbidden)
     }
 
-    // "embeddings" is a special case. It is not a leak here -- the meaning
-    // mode names the mechanism it uses, on purpose, and both modes now
-    // describe themselves at once so a reader can choose between them. So
-    // the assertion is that this is the *only* place the word appears: no
-    // work, no result and no filter may carry it.
-    const modes = screen.getByRole('group', { name: 'Search mode' })
-    expect(modes.textContent).toContain('embeddings')
-    expect(rendered.replace(modes.textContent ?? '', '')).not.toContain('embedding')
+    // The mode description used to name the mechanism ("using Noema's
+    // embeddings"). It now says what the search does rather than how, so the
+    // word should not appear anywhere on the page at all.
+    for (const forbidden of ['embedding', 'semantic', 'vector', 'corpus', 'passage']) {
+      expect(rendered.toLowerCase()).not.toContain(forbidden)
+    }
   })
 
   it('opens a work when its card is clicked', async () => {
@@ -337,27 +335,109 @@ describe('Discover', () => {
     renderPage()
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
 
-    expect(screen.getByText(/Results are text similarity, not a recommendation/)).toBeInTheDocument()
+    expect(screen.getByText(/It is a way of finding things, not a recommendation/)).toBeInTheDocument()
     expect(await screen.findByText(/Describe what you are in the mood for/)).toBeInTheDocument()
   })
 
-  it('runs a semantic search and names where each passage came from', async () => {
+  it('returns works rather than a list of repeated passages', async () => {
+    // Three passages of Alice matched; Alice is one result, not three.
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
     expect(
-      await screen.findByText(/Alice was beginning to get very tired of sitting/),
+      await screen.findByRole('heading', { name: /Works that read like/ }),
     ).toBeInTheDocument()
-    // A third-party summary is not the work's own text, and says so.
-    expect(screen.getByText(/from a wikipedia summary, not the work’s own text/)).toBeInTheDocument()
-    expect(screen.getByText(/from the work’s own text/)).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', { name: /Alice.*open this work/ }),
+    ).toHaveLength(1)
+    // The passage is not part of the result list: it sits inside a
+    // disclosure that starts closed, so the list shows works and the
+    // evidence is there only if asked for.
+    const excerpt = screen.getByText(/Alice was beginning to get very tired of sitting/)
+    const disclosure = excerpt.closest('details')
+    expect(disclosure).not.toBeNull()
+    expect(disclosure).not.toHaveAttribute('open')
+  })
+
+  it('opens the canonical work page from a meaning result', async () => {
+    const user = userEvent.setup()
+    const open = vi.fn()
+    renderPage({}, { onOpenWork: open })
+
+    await screen.findByText('Cowboy Bebop')
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
+    await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    await user.click(
+      await screen.findByRole('button', { name: /Alice.*open this work/ }),
+    )
+    expect(open).toHaveBeenCalledWith('work-1')
+  })
+
+  it('keeps the supporting passage compact and behind a disclosure', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Cowboy Bebop')
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
+    await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    const why = (await screen.findAllByText('Why it appeared'))[0]
+    await user.click(why)
+
+    expect(
+      screen.getByText(/Alice was beginning to get very tired of sitting/),
+    ).toBeInTheDocument()
+    // The tier is stated, so a summary is never mistaken for the work.
+    expect(screen.getByText(/from the work itself/)).toBeInTheDocument()
+  })
+
+  it('says "across the whole work" when the passage sits in no container', async () => {
+    // A work-level summary describes the whole work, and the source gave it
+    // no chapter or episode number. Printing one would be an invention.
+    const user = userEvent.setup()
+    renderPage({
+      semantic: workSearchResponse([
+        {
+          ...presentation(ANIME),
+          similarity: 0.51,
+          distance: 0.49,
+          representation: 'content_unit',
+          evidence: {
+            container_id: null,
+            container_type: null,
+            container_title: null,
+            container_sequence_number: null,
+            text_tier: 'summary',
+            matching_passages: 1,
+            excerpt: 'A crew of bounty hunters drift between jobs.',
+            source_name: 'wikipedia',
+            licence: 'CC-BY-SA-4.0',
+          },
+        },
+      ]),
+    })
+
+    await screen.findByText('Cowboy Bebop')
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
+    await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+
+    const why = (await screen.findAllByText('Why it appeared'))[0]
+    await user.click(why)
+
+    expect(screen.getByText(/across the whole work/)).toBeInTheDocument()
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument()
+    expect(screen.getByText(/from a wikipedia summary/)).toBeInTheDocument()
   })
 
   it('shows no similarity numbers on the product surface', async () => {
@@ -365,11 +445,11 @@ describe('Discover', () => {
     const { container } = renderPage()
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
-    await screen.findByText(/Alice was beginning to get very tired of sitting/)
+    await screen.findAllByText('Why it appeared')
     const rendered = container.textContent ?? ''
     expect(rendered).not.toContain('0.4212')
     expect(rendered).not.toContain('similarity 0')
@@ -380,11 +460,11 @@ describe('Discover', () => {
     const { container } = renderPage()
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
-    await screen.findByText(/Alice was beginning to get very tired of sitting/)
+    await screen.findAllByText('Why it appeared')
     expect(screen.getByText(/They are not chosen for you/)).toBeInTheDocument()
     expect(container.textContent ?? '').not.toMatch(/recommended for you/i)
   })
@@ -395,11 +475,11 @@ describe('Discover', () => {
     renderPage({}, { onOpenRetrievalDetail: inspect })
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
-    await user.click(await screen.findByRole('button', { name: 'Inspect retrieval details' }))
+    await user.click(await screen.findByRole('button', { name: 'See how this search works' }))
     expect(inspect).toHaveBeenCalled()
   })
 
@@ -408,7 +488,7 @@ describe('Discover', () => {
     const { container } = renderPage({ semanticFails: true })
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
@@ -423,7 +503,7 @@ describe('Discover', () => {
     const { container } = renderPage({ semanticUnreachable: true })
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
@@ -442,12 +522,12 @@ describe('Discover', () => {
     renderPage({}, { onOpenRetrievalDetail: inspect })
 
     await screen.findByText('Cowboy Bebop')
-    await user.click(screen.getByRole('button', { name: 'By meaning' }))
+    await user.click(screen.getByRole('button', { name: 'By theme' }))
     await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
     await user.type(screen.getByLabelText('Describe a theme'), 'isolation')
     await user.click(screen.getByRole('button', { name: 'Search' }))
 
-    await user.click(await screen.findByRole('button', { name: 'Inspect retrieval details' }))
+    await user.click(await screen.findByRole('button', { name: 'See how this search works' }))
 
     expect(inspect).toHaveBeenCalledWith({
       mode: 'meaning',

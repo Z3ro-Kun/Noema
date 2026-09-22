@@ -164,6 +164,64 @@ export const RELATIONSHIPS = [
   },
 ]
 
+/**
+ * The product-facing meaning search: works, not passages.
+ *
+ * Two raw hits from Alice fold into one work result, which is the whole
+ * point of the endpoint -- `top_k` counts works.
+ */
+export function workSearchResponse(
+  results: Record<string, unknown>[] = [
+    {
+      ...presentation(WORK),
+      similarity: 0.4212,
+      distance: 0.5788,
+      representation: 'content_unit',
+      evidence: {
+        container_id: 'container-1',
+        container_type: 'chapter',
+        container_title: 'Down the Rabbit-Hole',
+        container_sequence_number: 1,
+        text_tier: 'primary',
+        matching_passages: 3,
+        excerpt: 'Alice was beginning to get very tired of sitting by her sister.',
+        source_name: 'gutenberg',
+        licence: null,
+      },
+    },
+    {
+      ...presentation(ANIME),
+      similarity: 0.3901,
+      distance: 0.6099,
+      representation: 'content_unit',
+      evidence: {
+        container_id: 'container-9',
+        container_type: 'episode',
+        container_title: 'Asteroid Blues',
+        container_sequence_number: 1,
+        text_tier: 'summary',
+        matching_passages: 1,
+        excerpt: 'A bounty hunter drifts between jobs.',
+        source_name: 'wikipedia',
+        licence: 'CC BY-SA',
+      },
+    },
+  ],
+) {
+  return {
+    query: 'isolation',
+    model_name: 'sentence-transformers/all-mpnet-base-v2',
+    metric: 'cosine',
+    result_kind: 'semantic_similarity',
+    top_k: 10,
+    domain: null,
+    text_tier: null,
+    representation: 'content_unit',
+    candidates_examined: 60,
+    results,
+  }
+}
+
 export const SEARCH_RESPONSE = {
   query: 'isolation',
   model_name: 'sentence-transformers/all-MiniLM-L6-v2',
@@ -345,5 +403,58 @@ export function workHistory(
     current_status: extra.current_status ?? 'planned',
     rating: extra.rating ?? null,
     in_library: extra.in_library ?? true,
+  }
+}
+
+/**
+ * A recommendation shelf.
+ *
+ * Extends the product presentation, like the wire does, so a recommendation
+ * renders with the same card as a Discover result and carries the same
+ * `user_state` separation.
+ */
+export function recommendationReason(
+  name = 'Psychological Depth',
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    presentation_key: 'enjoys_feature',
+    direction: 'positive',
+    concepts: [{ key: name.toLowerCase().replace(/ /g, '-'), name }],
+    confidence_band: 'moderate',
+    rated_works: 4,
+    ...overrides,
+  }
+}
+
+export function recommendationResponse(
+  overrides: Record<string, unknown> = {},
+  recommendations: Record<string, unknown>[] = [
+    {
+      ...presentation(WORK),
+      reasons: [recommendationReason()],
+      cautions: [],
+      confidence_band: 'moderate',
+    },
+    {
+      ...presentation(ANIME),
+      reasons: [recommendationReason('Mystery')],
+      cautions: [recommendationReason('Horror', {
+        presentation_key: 'negative_feature',
+        direction: 'negative',
+      })],
+      confidence_band: 'high',
+    },
+  ],
+) {
+  return {
+    summary: {
+      state: 'personalized',
+      established_preferences: 2,
+      candidates_considered: 30,
+      candidates_matched: 12,
+      ...overrides,
+    },
+    recommendations,
   }
 }

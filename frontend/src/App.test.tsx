@@ -4,7 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App, { AppRoutes } from './App'
 import { setSessionToken } from './api/client'
-import { resetSessionForTests, setAuthenticatedForTests } from './auth/session'
+import {
+  resetSessionForTests,
+  setAuthenticatedForTests,
+  setRestoringForTests,
+} from './auth/session'
 import {
   ACCOUNT,
   ANIME,
@@ -23,24 +27,82 @@ import {
  *
  * Phase 1Y replaced the development landing page -- a corpus list, a health
  * panel and links to every debugging surface -- with Home, Discover and a
- * product work page, all under one set of navigation. So this suite is now
- * about *navigation* rather than about any one page's content; the page
- * suites own that.
+ * product work page, all under one set of navigation. So this suite is about
+ * *navigation* rather than about any one page's content; the page suites own
+ * that.
  *
- * The loop this checks is the product's whole reason to exist:
+ * The loop it checks is the product's whole reason to exist:
  *
  *     Home -> Discover -> a work -> add and rate it -> Your Taste
  *
- * There is no router, deliberately (see `App.tsx`), so "navigating" means the
- * view state changed and the right page rendered. That is exactly what a
- * reader experiences, and it is what these assertions look at.
+ * ---
+ *
+ * The gate
+ *
+ * Noema is not a public catalogue. Every one of those addresses is behind a
+ * session, decided in one place in `App.tsx` -- a layout route, not a check
+ * repeated per page -- so what this suite asserts about the gate is asserted
+ * about the whole application at once:
+ *
+ *     without a session      any application address -> Login, and the
+ *                            address is kept so signing in returns to it
+ *     with a session         Login and Register step aside
+ *     while restoring        neither: nothing protected is rendered and no
+ *                            redirect is issued until the session is known
+ *
+ * That third line is the one worth stating out loud. A reload starts with a
+ * stored token and no answer yet, and a gate that treats "not yet known" as
+ * "anonymous" throws the reader out of their own session on every refresh.
  */
 
 const WORKS = [presentation(WORK), presentation(ANIME)]
 
+const EMPTY_DASHBOARD = {
+  summary: {
+    profile_state: 'no_activity',
+    rated_works: 0,
+    established_preferences: 0,
+    emerging_signals: 0,
+  },
+  strongly_likes: [],
+  mildly_likes: [],
+  dislikes: [],
+  emerging: [],
+  what_stands_out: [],
+}
+
+/** A profile with one established preference, which is what raises a shelf. */
+const WITH_PREFERENCE = {
+  ...EMPTY_DASHBOARD,
+  summary: { ...EMPTY_DASHBOARD.summary, profile_state: 'established', rated_works: 6 },
+  strongly_likes: [
+    {
+      key: 'psychological-depth',
+      display_name: 'Psychological Depth',
+      features: [{ key: 'psychological-depth', name: 'Psychological Depth' }],
+      kind: 'individual',
+      direction: 'positive',
+      confidence_band: 'moderate',
+      presentation_key: 'enjoys_feature',
+      domains: ['Anime'],
+      evidence_summary: {
+        rated_works: 5,
+        supporting_works: 6,
+        domains: ['Anime'],
+        includes_reconsumed_works: false,
+        has_mixed_evidence: false,
+      },
+      also_supported_by: [],
+    },
+  ],
+}
+
 interface Options {
   signedIn?: boolean
   library?: unknown[]
+  dashboard?: unknown
+  /** Start as a page reload does: a stored token, not yet answered for. */
+  restoring?: boolean
 }
 
 function mockApi(options: Options = {}) {
@@ -69,19 +131,7 @@ function mockApi(options: Options = {}) {
       )
     }
     if (url.includes('/preferences/dashboard')) {
-      return json({
-        summary: {
-          profile_state: 'no_activity',
-          rated_works: 0,
-          established_preferences: 0,
-          emerging_signals: 0,
-        },
-        strongly_likes: [],
-        mildly_likes: [],
-        dislikes: [],
-        emerging: [],
-        what_stands_out: [],
-      })
+      return json(options.dashboard ?? EMPTY_DASHBOARD)
     }
     if (url.includes('/preferences/feedback')) return json({ items: [] })
     if (url.includes('/api/v1/library')) {
@@ -131,11 +181,12 @@ function renderApp(options: Options = {}) {
  * A direct link is the thing the router exists for, and it cannot be tested
  * by clicking: the reader arrives with the URL already set.
  */
-function renderAt(path: string, options: Options = {}) {
+function renderAt(path: string | { pathname: string; state?: unknown }, options: Options = {}) {
   // Synchronously, not by leaving a token for `restoreSession` to find: a
   // private address is decided on the first render, and a store that is
   // still anonymous at that moment redirects before the restore lands.
-  if (options.signedIn) setAuthenticatedForTests(ACCOUNT.email)
+  if (options.restoring) setRestoringForTests()
+  else if (options.signedIn) setAuthenticatedForTests(ACCOUNT.email)
   vi.stubGlobal('fetch', mockApi(options))
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -149,6 +200,11 @@ function nav() {
   return within(screen.getByRole('navigation', { name: 'Main' }))
 }
 
+/** The application shell itself, which only a signed-in reader ever sees. */
+function expectOutsideTheApplication() {
+  expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
+}
+
 describe('Navigation', () => {
   beforeEach(() => {
     // The router reads `window.history`, which persists between tests in a
@@ -159,10 +215,19 @@ describe('Navigation', () => {
     vi.unstubAllGlobals()
   })
 
-  it('opens on Home with the four destinations always available', async () => {
+  it('opens on Login for a reader without an account', async () => {
     renderApp()
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+    expectOutsideTheApplication()
+  })
+
+  it('opens on Home with the four destinations once signed in', async () => {
+    renderApp({ signedIn: true })
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Welcome back' }),
+    ).toBeInTheDocument()
     for (const label of ['Home', 'Discover', 'Library', 'Your Taste']) {
       expect(nav().getByRole('button', { name: label })).toBeInTheDocument()
     }
@@ -174,9 +239,9 @@ describe('Navigation', () => {
 
   it('reaches Discover from the nav', async () => {
     const user = userEvent.setup()
-    renderApp()
+    renderApp({ signedIn: true })
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+    await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
     await user.click(nav().getByRole('button', { name: 'Discover' }))
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Discover' })).toBeInTheDocument()
@@ -184,57 +249,6 @@ describe('Navigation', () => {
       'aria-current',
       'page',
     )
-  })
-
-  it('sends an anonymous reader from Your Taste to Login', async () => {
-    const user = userEvent.setup()
-    renderApp()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    await user.click(nav().getByRole('button', { name: 'Your Taste' }))
-
-    // A taste profile is read from a reader's own ratings, so there is
-    // nothing to show without an account.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
-  })
-
-  it('sends an anonymous reader from Library to Login', async () => {
-    const user = userEvent.setup()
-    renderApp()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    await user.click(nav().getByRole('button', { name: 'Library' }))
-
-    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
-  })
-
-  it('returns to the work after signing in from it', async () => {
-    // The work page used to ask for authentication by navigating to the
-    // Library, so a reader who signed in from a work landed in their library
-    // and lost the work they had been reading. The destination is recorded
-    // on the way to Login now.
-    const user = userEvent.setup()
-    renderApp()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    await user.click(nav().getByRole('button', { name: 'Discover' }))
-    await user.click(
-      await screen.findByRole('button', { name: /Alice.*open this work/ }),
-    )
-    await screen.findByRole('heading', { level: 1, name: /Alice/ })
-
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
-
-    await user.type(screen.getByLabelText('Email'), 'reader@example.test')
-    await user.type(screen.getByLabelText('Password'), 'a-long-enough-password')
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-
-    // Back on the same work, not on the Library.
-    expect(
-      await screen.findByRole('heading', { level: 1, name: /Alice/ }),
-    ).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 1, name: 'Library' })).not.toBeInTheDocument()
   })
 
   it('reaches the Library from the nav once signed in', async () => {
@@ -245,6 +259,89 @@ describe('Navigation', () => {
     await user.click(nav().getByRole('button', { name: 'Library' }))
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument()
+  })
+
+  // --- the gate ------------------------------------------------------------
+
+  it.each(['/', '/discover', '/library', '/taste', '/works/work-1', '/nothing-here'])(
+    'sends a reader without a session from %s to Login',
+    async (path) => {
+      renderAt(path)
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Log in' }),
+      ).toBeInTheDocument()
+      expectOutsideTheApplication()
+    },
+  )
+
+  it('keeps Login reachable without a session', async () => {
+    renderAt('/login')
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+  })
+
+  it('keeps Register reachable without a session', async () => {
+    renderAt('/register')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Create an account' }),
+    ).toBeInTheDocument()
+  })
+
+  it('sends a signed-in reader away from Login and into the product', async () => {
+    renderAt('/login', { signedIn: true })
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Welcome back' }),
+    ).toBeInTheDocument()
+  })
+
+  it('refuses to follow a remembered destination that is not ours', async () => {
+    // `from` only ever comes from this application's own navigations, so an
+    // external address cannot get into it through a query string. The check
+    // exists anyway: `//example.com` reads as a path to the router and as
+    // another origin to the browser, and Home is the right answer for it.
+    renderAt(
+      { pathname: '/login', state: { from: '//example.invalid/phish' } },
+      { signedIn: true },
+    )
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Welcome back' }),
+    ).toBeInTheDocument()
+  })
+
+  it('sends a signed-in reader away from Register too', async () => {
+    renderAt('/register', { signedIn: true })
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Welcome back' }),
+    ).toBeInTheDocument()
+  })
+
+  it('exposes nothing while a stored session is still being checked', async () => {
+    // The refresh case. Until `/auth/me` answers there is no honest verdict,
+    // so the gate renders neither the protected page nor a redirect to Login
+    // -- a reader reloading their own library must not be bounced out of it
+    // and must not see their library before the session is confirmed either.
+    renderAt('/library', { signedIn: true, restoring: true })
+
+    expect(screen.queryByRole('heading', { level: 1, name: 'Library' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Log in' })).not.toBeInTheDocument()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument()
+  })
+
+  it('sends a reader whose stored session is no longer valid to Login', async () => {
+    // Same starting point, opposite answer: the token is there but the server
+    // rejects it, and an expired session buys no access to anything.
+    renderAt('/taste', { restoring: true })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Your Taste' }),
+    ).not.toBeInTheDocument()
   })
 
   // --- the browser's own history -------------------------------------------
@@ -295,11 +392,11 @@ describe('Navigation', () => {
   })
 
   it('steps back from Register to Login', async () => {
+    // `renderApp`, not `renderAt`: this is about the browser's own history,
+    // which a MemoryRouter does not have.
     const user = userEvent.setup()
     renderApp()
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    await user.click(nav().getByRole('button', { name: 'Library' }))
     await screen.findByRole('heading', { level: 1, name: 'Log in' })
 
     await user.click(screen.getByRole('button', { name: 'Create an account' }))
@@ -314,19 +411,11 @@ describe('Navigation', () => {
   // --- addresses -----------------------------------------------------------
 
   it('opens a work straight from its own address', async () => {
-    renderAt('/works/work-2')
+    renderAt('/works/work-2', { signedIn: true })
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Cowboy Bebop' }),
     ).toBeInTheDocument()
-  })
-
-  it('shows an anonymous visitor the canonical work and nothing personal', async () => {
-    renderAt('/works/work-1')
-
-    expect(await screen.findByRole('heading', { level: 1, name: /Alice/ })).toBeInTheDocument()
-    expect(screen.getByText(/Sign in to track this/)).toBeInTheDocument()
-    expect(screen.queryByLabelText(/Status for/)).not.toBeInTheDocument()
   })
 
   it('shows a signed-in reader their own state at the same address', async () => {
@@ -340,9 +429,11 @@ describe('Navigation', () => {
   })
 
   it('sends an address Noema does not have back to Home', async () => {
-    renderAt('/nothing-here')
+    renderAt('/nothing-here', { signedIn: true })
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Welcome back' }),
+    ).toBeInTheDocument()
   })
 
   it('opens a private address directly, once there is an account', async () => {
@@ -367,6 +458,24 @@ describe('Navigation', () => {
     ).toBeInTheDocument()
   })
 
+  it('returns to the work after signing in from its address', async () => {
+    // A shared link is the case that makes deep-link preservation worth
+    // having: the reader arrives at a work, has to sign in on the way, and
+    // must land on the work rather than on Home or on their Library.
+    const user = userEvent.setup()
+    renderAt('/works/work-1')
+
+    await screen.findByRole('heading', { level: 1, name: 'Log in' })
+    expect(screen.queryByRole('heading', { level: 1, name: /Alice/ })).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Email'), 'reader@example.test')
+    await user.type(screen.getByLabelText('Password'), 'a-long-enough-password')
+    await user.click(screen.getByRole('button', { name: 'Log in' }))
+
+    expect(await screen.findByRole('heading', { level: 1, name: /Alice/ })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Library' })).not.toBeInTheDocument()
+  })
+
   it('does not loop between a private address and Login', async () => {
     renderAt('/library')
 
@@ -379,11 +488,11 @@ describe('Navigation', () => {
 
   // --- signing out ---------------------------------------------------------
 
-  it('lands on Home after signing out of the Library', async () => {
-    // The guard has to tell two situations apart: arriving without an
-    // account (-> Login, come back afterwards) and giving one up while
-    // already here (-> Home). It used to do neither, so logging out of a
-    // private page immediately asked for a login.
+  it('lands on Login after signing out of the Library', async () => {
+    // Signing out leaves the application entirely. There is no signed-out
+    // version of Noema to be dropped on, so the only honest destination is
+    // the login page -- and the reader must not be left looking at a private
+    // page for a frame on the way there.
     const user = userEvent.setup()
     renderApp({ signedIn: true })
 
@@ -393,11 +502,11 @@ describe('Navigation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Log out' }))
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 1, name: 'Log in' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+    expectOutsideTheApplication()
   })
 
-  it('lands on Home after signing out of Your Taste', async () => {
+  it('lands on Login after signing out of Your Taste', async () => {
     const user = userEvent.setup()
     renderApp({ signedIn: true })
 
@@ -407,19 +516,31 @@ describe('Navigation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Log out' }))
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 1, name: 'Log in' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+    expectOutsideTheApplication()
   })
 
-  it('still sends an anonymous arrival to Login rather than Home', async () => {
-    // The guard is not weakened: only the sign-out case changed.
+  it('forgets the page signed out of rather than returning to it', async () => {
+    // Deep-link preservation and signing out pull in opposite directions,
+    // and the difference is intent: an anonymous arrival was *trying* to
+    // reach that page, while someone who pressed Log out was finished with
+    // it. Signing back in therefore opens Home, not the Library.
     const user = userEvent.setup()
-    renderApp()
+    renderApp({ signedIn: true })
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+    await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
     await user.click(nav().getByRole('button', { name: 'Library' }))
+    await screen.findByRole('heading', { level: 1, name: 'Library' })
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
+    await screen.findByRole('heading', { level: 1, name: 'Log in' })
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Email'), ACCOUNT.email)
+    await user.type(screen.getByLabelText('Password'), 'a-long-enough-password')
+    await user.click(screen.getByRole('button', { name: 'Log in' }))
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Welcome back' }),
+    ).toBeInTheDocument()
   })
 
   it('shows no personal data after signing out', async () => {
@@ -428,7 +549,7 @@ describe('Navigation', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
     await user.click(screen.getByRole('button', { name: 'Log out' }))
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+    await screen.findByRole('heading', { level: 1, name: 'Log in' })
 
     expect(screen.queryByText(ACCOUNT.email)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument()
@@ -536,21 +657,26 @@ describe('Navigation', () => {
     ).toBeInTheDocument()
   })
 
-  it('carries a domain chosen on Home into Discover as a filter', async () => {
+  it('carries a theme chosen on Home into Discover as a filter', async () => {
+    // Home offers Discover a filter, and Discover has to arrive already
+    // filtered rather than showing everything and being corrected. The
+    // anonymous landing page used to be where this was exercised, from its
+    // medium chips; the same wiring now runs from a signed-in theme shelf.
     const user = userEvent.setup()
-    renderApp()
+    renderApp({ signedIn: true, dashboard: WITH_PREFERENCE })
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    await user.click(screen.getByRole('button', { name: 'Anime' }))
+    await screen.findByRole('heading', { name: 'Because you enjoy Psychological Depth' })
+    await user.click(screen.getByRole('button', { name: 'See all' }))
 
     await screen.findByRole('heading', { level: 1, name: 'Discover' })
     await waitFor(() =>
-      expect((screen.getByLabelText('Medium') as HTMLSelectElement).value).toBe('anime'),
+      expect((screen.getByLabelText('Theme') as HTMLSelectElement).value).toBe(
+        'psychological-depth',
+      ),
     )
-    expect(await screen.findByText('Cowboy Bebop')).toBeInTheDocument()
   })
 
-  it('opens the corpus viewer from the work page, and keeps it separate', async () => {
+  it('links the record viewer from the work page, and keeps it separate', async () => {
     const user = userEvent.setup()
     renderApp({ signedIn: true })
 
@@ -560,17 +686,20 @@ describe('Navigation', () => {
 
     await screen.findByRole('heading', { name: 'Synopsis' })
     // The product page says nothing about adapters; the viewer is where that
-    // lives, and it is labelled as a development surface.
-    expect(screen.getByText(/the development surface/)).toBeInTheDocument()
+    // lives, and the link says plainly that it is a development surface.
+    expect(
+      screen.getByRole('button', { name: 'See where this record came from' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/a development surface/)).toBeInTheDocument()
   })
 
-  it('reaches retrieval detail from Discover’s meaning search', async () => {
+  it('reaches the theme search from Discover', async () => {
     const user = userEvent.setup()
-    renderApp()
+    renderApp({ signedIn: true })
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+    await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
     await user.click(nav().getByRole('button', { name: 'Discover' }))
-    await user.click(await screen.findByRole('button', { name: 'By meaning' }))
+    await user.click(await screen.findByRole('button', { name: 'By theme' }))
 
     expect(await screen.findByText(/Describe what you are in the mood for/)).toBeInTheDocument()
   })

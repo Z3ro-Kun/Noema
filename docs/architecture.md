@@ -844,6 +844,44 @@ route cannot leak a row by forgetting a filter.
 A missing entry and another user's entry both return 404. A 403 would confirm
 the row exists.
 
+### The product is behind the session
+
+Noema is not a public catalogue with a personal half bolted on. Every
+application address -- Home, Discover, a work page, the Library, Your Taste
+-- requires a session; `/login` and `/register` are the only public routes,
+and the root sends an anonymous reader to `/login` rather than to a
+signed-out version of itself.
+
+The gate is **one layout route** in `App.tsx`, not a check inside each page.
+A page can therefore assume it is only ever rendered for a signed-in reader,
+which is what keeps the rule in one place rather than in thirteen, and what
+stops a newly added route from being private only if somebody remembers.
+
+Three states, and the middle one is what makes a refresh survivable:
+
+    restoring      render nothing -- neither the page nor a redirect. A
+                   stored token with no answer yet is not an anonymous
+                   reader, and treating it as one signs people out every
+                   time they reload.
+    anonymous      Login, carrying the address they asked for, so a shared
+                   deep link survives the detour.
+    authenticated  the page.
+
+Only in-application paths are carried through login; an arbitrary external
+URL is not a destination the gate will honour. Signing out is treated as
+distinct from arriving without an account: both end at Login, but a
+deliberate sign-out drops the return address rather than handing the reader
+back to the page they just left.
+
+**This is not the security boundary.** It is a product boundary and a
+convenience, and it runs in the reader's browser where it can be edited. The
+backend enforces authentication independently on exactly the routes it
+enforced it on before: nothing was made public because the frontend now
+redirects. The catalogue routes (`/domains`, `/works`, `/works/{id}`,
+`/works/facets`, semantic search) continue to resolve a session optionally,
+returning the canonical work with `user_state` omitted when there is none.
+They carry no user data, and locking the client did not change what they are.
+
 ## Work-level concepts
 
 `Concept` was introduced in Phase 0 as shared cross-domain vocabulary and was
@@ -951,6 +989,82 @@ relationship to a work stays in `user_content_interactions`. That
 independence is the precondition for the eventual taste layer: both sides
 have to be separately true before "which concepts does this user rate highly"
 can be asked at all. Phase 1M builds the content half and correlates nothing.
+
+### The confidence audit, and what it actually found
+
+The suspicion that prompted it was that concepts were being attached at
+confidences like 0.01 and then quietly steering recommendations. Measured
+against the 529 associations then in the corpus, that is not what was
+happening:
+
+  Nothing sits at the bottom. The `0.00-0.09` bucket is **empty**. The
+  minimum is 0.10, the maximum 0.99, the mean 0.742 and the median 0.775.
+  Nine rows in total -- 1.7% -- are below 0.30.
+
+  A quarter of the rows have no confidence at all. 141 associations (26.7%)
+  are NULL, which is what AniList genres and LCSH subjects produce, because
+  neither states a rank. All 24 literature associations are NULL. A NULL is
+  an absence of a stated relevance, not a low one, and reading it as a low
+  score is the error the field's semantics are designed to prevent.
+
+  The number never enters arithmetic. `concept_confidence` is carried into
+  `WorkContribution` and the development-only evidence surface, is explicitly
+  nulled in the taste layer, and is multiplied by nothing. Every association
+  participates in recommendation scoring identically regardless of what
+  confidence says -- so a low confidence could not have been steering
+  anything, and neither could a high one.
+
+Removing all nine sub-0.30 rows as an experiment changed two of the seven
+preference-engine profiles. That is a real effect and it is also the wrong
+lever, because it is unrelated to what was actually wrong.
+
+**The defect was in the vocabulary, not in the confidences.** Five aliases
+claimed labels that do not mean the concept they were attached to:
+
+    post-apocalypse   "Dystopian", "Survival", "Lost Civilization"
+    urban-modernity   "Artificial Intelligence", "Virtual World"
+
+Between them they had made `post-apocalypse` a member of a third of the
+corpus, including *Vagabond* (0.76, 17th-century Japan), *Uzumaki* (0.87),
+*Berserk* (0.82), *Chainsaw Man* (0.82), *Tokyo Ghoul* (0.81) and *Code
+Geass* (0.76), and had put *Hunter x Hunter* (0.66, for a game world inside
+a fantasy) and *Tower of God* (0.60) in `urban-modernity`. **Every one of
+those rows is high-confidence.** No threshold, at 0.2 or anywhere else,
+would have removed a single one of them, which is the clearest evidence that
+a threshold was never the fix.
+
+Correcting the five aliases took the corpus from 529 associations to 517:
+`post-apocalypse` from 20 members to 11, `urban-modernity` from 17 to 14.
+
+### Convergence runs both ways
+
+Correcting an alias is only half a fix. The label stops producing new rows,
+while every row it already produced stays -- so the database goes on
+asserting something the vocabulary no longer says, and the vocabulary stops
+being the single source of truth the moment it is corrected.
+
+So population now **withdraws** an association when every label recorded as
+supporting it resolves somewhere else, or nowhere at all. The test is
+deliberately narrow: a row still backed by one good label survives with its
+other evidence intact, and a row with no recorded `supporting_labels` is
+never withdrawn, because deleting on an absence of evidence is the opposite
+of what this module is for. Withdrawals are named per work in the population
+report -- this is the only path in the system that removes a
+characterization, and a run that removes something has to say what.
+
+A row that survives is cleaned up the same way: evidence the vocabulary has
+stopped reading as this concept is dropped from `supporting_labels`, so the
+row does not go on citing support it does not have. Two different absences,
+and only one of them is history -- a label the *source* stopped supplying
+stays recorded, because it did support this concept once; a label the
+*vocabulary* stopped reading as this concept never supported it at all.
+
+Two of the withdrawn rows are arguably true of the work as a matter of
+general knowledge: *Neon Genesis Evangelion* and *Hunter x Hunter* are not
+absurd members of `urban-modernity`. They went anyway, because the rule this
+module exists to enforce is that a work is characterized only by labels its
+own source actually supplies about it, and the labels that had supported
+those two rows named a subject rather than a setting.
 
 ## The product surface
 

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import {
   BrowserRouter,
   Navigate,
+  Outlet,
   Route,
   Routes,
   useLocation,
@@ -93,8 +94,36 @@ const PATHS: Record<ProductView, string> = {
   register: '/register',
 }
 
-/** Destinations an anonymous reader cannot use, and is sent to Login from. */
-const PRIVATE = ['/library', '/taste', '/preferences']
+/**
+ * Signing out from any of these has to leave the page, because all of them
+ * render a signed-in reader's own data. That is now every address except
+ * Login and Register, so the rule is stated as its complement -- a list of
+ * the private ones would have to be kept in step with the route table and
+ * would silently rot the first time a route was added.
+ */
+const PUBLIC = ['/login', '/register']
+
+function isPrivatePath(pathname: string): boolean {
+  return !PUBLIC.includes(pathname)
+}
+
+/**
+ * Three routes exist to look at Noema's insides rather than to use it: the
+ * retrieval inspector, the raw preference-evidence page and the record
+ * viewer. They are useful while building and have no place in a public
+ * deployment -- what they show is the data layer, complete with distances,
+ * representation names and stored text.
+ *
+ * `import.meta.env.DEV` is Vite's own flag: true under `npm run dev`, false in
+ * anything `npm run build` produces. So the gate needs no new environment
+ * variable and cannot be switched on by accident in production, and the
+ * backend refuses the same routes independently -- neither half is load
+ * bearing on its own.
+ *
+ * A production build sends these addresses to Home, which is what every other
+ * unknown address does. Nothing announces that they were ever there.
+ */
+const DEV_SURFACES = import.meta.env.DEV
 
 interface AuthState {
   /** Where to return to once authentication succeeds. */
@@ -138,10 +167,14 @@ function useProductNavigate() {
 /**
  * Signing out is not the same as arriving without an account.
  *
- * Arriving anonymous at a private page means "you need an account for this"
- * and belongs at Login. Signing out while already on one means the reader
- * chose to leave, and sending them to a login form is the opposite of what
- * they asked for. `wasSignedIn` is what tells the two apart.
+ * Both now end at Login -- there is no signed-out Noema to be left standing
+ * in -- but they differ in what is remembered. Arriving anonymous at a
+ * private address means "you need an account for *this*", so the address is
+ * kept and signing in returns to it. Choosing to sign out means the reader is
+ * finished with that page, so this replaces the entry with a bare `/login`
+ * and the return address goes with it. `wasSignedIn` is what tells the two
+ * apart; without it, `Private` would hand a reader who just logged out
+ * straight back to the page they logged out of.
  */
 function useSignOutLanding() {
   const session = useSession()
@@ -157,16 +190,33 @@ function useSignOutLanding() {
     }
     if (!wasSignedIn.current) return
     wasSignedIn.current = false
-    if (PRIVATE.includes(location.pathname)) navigate('/', { replace: true })
+    if (isPrivatePath(location.pathname)) navigate('/login', { replace: true })
   }, [session.loading, session.account, location.pathname, navigate])
 }
 
-/** A destination that needs an account, and remembers the way back. */
-function Private({ children }: { children: React.ReactElement }) {
+/**
+ * The gate, in one place.
+ *
+ * Used as a layout route, so every protected address is guarded by this
+ * single component rather than by a check inside each page. A page can
+ * therefore assume it is only ever rendered for a signed-in reader, which is
+ * what keeps the rule in one place instead of thirteen.
+ *
+ * Three states, and the middle one is the one that is easy to get wrong:
+ *
+ *     restoring      render nothing. Redirecting here would throw out
+ *                    anyone who simply refreshed the page, and rendering
+ *                    the children would flash protected content at someone
+ *                    whose session is about to turn out to be invalid.
+ *     anonymous      Login, remembering where they were going.
+ *     authenticated  the page.
+ */
+function Private() {
   const session = useSession()
   const location = useLocation()
 
-  // Never while restoring: a refresh must not look like a sign-out.
+  // Never while restoring: a refresh must not look like a sign-out, and a
+  // protected page must not be painted before the answer is known.
   if (session.loading) return null
   if (!session.account) {
     return (
@@ -177,7 +227,40 @@ function Private({ children }: { children: React.ReactElement }) {
       />
     )
   }
-  return children
+  return <Outlet />
+}
+
+/**
+ * The other direction: Login and Register are for readers who are not signed
+ * in, so a signed-in one is sent into the application rather than shown a
+ * form they have already filled in.
+ *
+ * `from` is honoured here too, which is what makes "deep link -> Login ->
+ * already signed in in another tab -> back to the deep link" work.
+ */
+function AnonymousOnly() {
+  const session = useSession()
+  const location = useLocation()
+  const from = (location.state as AuthState | null)?.from
+
+  if (session.loading) return null
+  if (session.account) return <Navigate to={internalPath(from) ?? '/'} replace />
+  return <Outlet />
+}
+
+/**
+ * A remembered destination, and only if it is one of ours.
+ *
+ * `from` is written by this file and read by this file, so no external URL
+ * can reach it through a query string. It is validated anyway, because the
+ * one value that would matter costs one line to rule out: `//example.com` is
+ * a path as far as the router is concerned and a different origin as far as
+ * the browser is concerned. Anything that is not a plain in-application path
+ * becomes Home rather than a redirect.
+ */
+function internalPath(from: string | undefined): string | null {
+  if (!from) return null
+  return from.startsWith('/') && !from.startsWith('//') ? from : null
 }
 
 function HomeRoute() {
@@ -360,37 +443,37 @@ export function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={<HomeRoute />} />
-      <Route path="/discover" element={<DiscoverRoute />} />
-      <Route path="/works/:workId" element={<WorkRoute />} />
-      <Route path="/works/:workId/corpus" element={<CorpusRoute />} />
-      <Route path="/retrieval" element={<RetrievalRoute />} />
-      <Route path="/login" element={<LoginRoute />} />
-      <Route path="/register" element={<RegisterRoute />} />
-      <Route
-        path="/library"
-        element={
-          <Private>
-            <LibraryRoute />
-          </Private>
-        }
-      />
-      <Route
-        path="/taste"
-        element={
-          <Private>
-            <TasteRoute />
-          </Private>
-        }
-      />
-      <Route
-        path="/preferences"
-        element={
-          <Private>
-            <PreferencesRoute />
-          </Private>
-        }
-      />
+      {/*
+        Noema is not a public catalogue. Everything below the gate needs an
+        account, including Home, Discover and a work page -- what a reader
+        sees there is shaped by their own library, and there is no version of
+        it worth showing to nobody.
+
+        Two public addresses, and only two. `*` sends everything else to `/`,
+        which is itself behind the gate, so an unknown address reaches Login
+        for an anonymous reader and Home for a signed-in one without either
+        case being spelled out.
+      */}
+      <Route element={<AnonymousOnly />}>
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/register" element={<RegisterRoute />} />
+      </Route>
+
+      <Route element={<Private />}>
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/discover" element={<DiscoverRoute />} />
+        <Route path="/works/:workId" element={<WorkRoute />} />
+        <Route path="/library" element={<LibraryRoute />} />
+        <Route path="/taste" element={<TasteRoute />} />
+        {DEV_SURFACES && (
+          <>
+            <Route path="/works/:workId/corpus" element={<CorpusRoute />} />
+            <Route path="/retrieval" element={<RetrievalRoute />} />
+            <Route path="/preferences" element={<PreferencesRoute />} />
+          </>
+        )}
+      </Route>
+
       {/* An address Noema does not have is Home, not a dead end. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

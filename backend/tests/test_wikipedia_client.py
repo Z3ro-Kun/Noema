@@ -94,20 +94,102 @@ def test_missing_page_raises_page_not_found() -> None:
         client.fetch_page("Nope")
 
 
-def test_resolve_page_tries_candidates_in_order() -> None:
+def test_resolve_page_asks_once_which_candidates_exist() -> None:
+    """Candidate lists are mostly misses, so existence is one request.
+
+    Only the survivors are fetched in full, and the caller's order still
+    decides which of them wins.
+    """
     attempted = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         title = request.url.params["titles"]
         attempted.append(title)
-        if title == "List of Test Series episodes":
-            return httpx.Response(200, json={"query": {"pages": [{"title": title, "missing": True}]}})
+        if "|" in title:
+            return httpx.Response(
+                200,
+                json={
+                    "query": {
+                        "pages": [
+                            {"title": "List of Test Series episodes", "missing": True},
+                            {"title": "Test Series", "pageid": 42},
+                        ]
+                    }
+                },
+            )
         return page_response(title=title)
 
     page = make_client(handler).resolve_page(["List of Test Series episodes", "Test Series"])
 
-    assert attempted == ["List of Test Series episodes", "Test Series"]
+    assert attempted == ["List of Test Series episodes|Test Series", "Test Series"]
     assert page.title == "Test Series"
+
+
+def test_resolve_page_keeps_the_callers_order_among_survivors() -> None:
+    """Two candidates exist; the earlier one is still the answer."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        title = request.url.params["titles"]
+        if "|" in title:
+            return httpx.Response(
+                200,
+                json={
+                    "query": {
+                        "pages": [
+                            {"title": "Test Series (webtoon)", "pageid": 7},
+                            {"title": "Test Series", "pageid": 42},
+                        ]
+                    }
+                },
+            )
+        return page_response(title=title)
+
+    page = make_client(handler).resolve_page(["Test Series (webtoon)", "Test Series"])
+
+    assert page.title == "Test Series (webtoon)"
+
+
+def test_resolve_page_falls_back_to_trying_each_when_the_probe_fails() -> None:
+    """Slower and always correct, rather than giving up on a probe error."""
+    attempted = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        title = request.url.params["titles"]
+        attempted.append(title)
+        if "|" in title:
+            return httpx.Response(500)
+        if title == "List of Test Series episodes":
+            return httpx.Response(
+                200, json={"query": {"pages": [{"title": title, "missing": True}]}}
+            )
+        return page_response(title=title)
+
+    page = make_client(handler).resolve_page(["List of Test Series episodes", "Test Series"])
+
+    assert attempted[1:] == ["List of Test Series episodes", "Test Series"]
+    assert page.title == "Test Series"
+
+
+def test_existing_titles_maps_the_answer_back_to_what_was_asked() -> None:
+    """The wiki normalizes titles; the caller gets its own spellings back."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "query": {
+                    "normalized": [{"from": "test_series", "to": "Test series"}],
+                    "pages": [
+                        {"title": "Test series", "pageid": 42},
+                        {"title": "Nothing Here", "missing": True},
+                    ],
+                }
+            },
+        )
+
+    found = make_client(handler).existing_titles(["test_series", "Nothing Here"])
+
+    assert found == {"test_series"}
 
 
 def test_resolve_page_raises_when_no_candidate_exists() -> None:

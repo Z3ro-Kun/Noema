@@ -42,6 +42,21 @@ class ContentUnit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     novel *is* the narrative, while a Wikipedia plot summary is *about* it.
     Both are text worth embedding, but comparing them without knowing which
     is which produces a similarity score with no defensible meaning.
+
+    A unit hangs off exactly one parent, and which one says what the text
+    describes:
+
+        container_id   text inside that chapter/episode/volume
+        work_id        text describing the work as a whole, used only where
+                       the canonical source catalogues no container the text
+                       could honestly belong to
+
+    Never both and never neither -- a unit with two parents makes "which work
+    is this?" have two answers, and every retrieval query resolves that
+    question by joining. The work-level form exists so that a legitimate
+    summary of a container-less work can be stored without inventing a
+    container to hold it; it is not a looser place to put text that does have
+    a container.
     """
 
     __tablename__ = "content_units"
@@ -49,10 +64,19 @@ class ContentUnit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         CheckConstraint(
             "text_tier IN ('primary', 'summary')", name="ck_content_unit_text_tier"
         ),
+        CheckConstraint(
+            "num_nonnulls(container_id, work_id) = 1",
+            name="ck_content_unit_single_parent",
+        ),
     )
 
-    container_id: Mapped[uuid.UUID] = mapped_column(
+    container_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("containers.id"), index=True
+    )
+    # Set instead of `container_id` for a work-level unit. See the class
+    # docstring: exactly one of the two is ever populated.
+    work_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("works.id"), index=True
     )
     # "passage" | "scene" | "panel" | "dialogue" ...
     unit_type: Mapped[str] = mapped_column(String(32))
@@ -68,5 +92,6 @@ class ContentUnit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
-    container: Mapped["Container"] = relationship(back_populates="content_units")
+    container: Mapped["Container | None"] = relationship(back_populates="content_units")
+    work: Mapped["Work | None"] = relationship(back_populates="content_units")  # noqa: F821
     text_source: Mapped["TextSource | None"] = relationship()  # noqa: F821

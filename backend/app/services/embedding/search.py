@@ -13,7 +13,7 @@ there would work today and stop working for no visible reason later.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -54,10 +54,13 @@ class SearchHit:
     work_id: uuid.UUID
     work_title: str
     domain_slug: str
-    container_id: uuid.UUID
-    container_type: str
+    # Null for a work-level unit: it describes the work as a whole and there
+    # is no container it sits in. The work fields above are always populated,
+    # because every unit resolves to exactly one work either way.
+    container_id: uuid.UUID | None
+    container_type: str | None
     container_title: str | None
-    container_sequence_number: int
+    container_sequence_number: int | None
     # Set for content_unit hits only.
     content_unit_id: uuid.UUID | None = None
     unit_type: str | None = None
@@ -100,14 +103,19 @@ def build_search_query(
 
     Restricted to one model: vectors from different models are not
     comparable, so mixing them would produce meaningless distances.
+
+    The container join is outer, and the work is reached through whichever
+    parent the unit has. A work-level summary is a unit like any other here:
+    it is filtered, ranked and returned by exactly the same rules, and only
+    its container columns come back empty.
     """
     distance = Embedding.vector.cosine_distance(query_vector).label("distance")
 
     statement = (
         select(ContentUnit, Work, Container, Domain.slug, TextSource, distance)
         .join(Embedding, Embedding.owner_id == ContentUnit.id)
-        .join(Container, ContentUnit.container_id == Container.id)
-        .join(Work, Container.work_id == Work.id)
+        .outerjoin(Container, ContentUnit.container_id == Container.id)
+        .join(Work, Work.id == func.coalesce(Container.work_id, ContentUnit.work_id))
         .join(Domain, Work.domain_id == Domain.id)
         .outerjoin(TextSource, ContentUnit.text_source_id == TextSource.id)
         .where(
@@ -257,10 +265,10 @@ async def semantic_search(
             work_id=work.id,
             work_title=work.title,
             domain_slug=domain,
-            container_id=container.id,
-            container_type=container.container_type,
-            container_title=container.title,
-            container_sequence_number=container.sequence_number,
+            container_id=container.id if container else None,
+            container_type=container.container_type if container else None,
+            container_title=container.title if container else None,
+            container_sequence_number=container.sequence_number if container else None,
             content_unit_id=unit.id,
             unit_type=unit.unit_type,
             sequence_number=unit.sequence_number,

@@ -7,7 +7,9 @@ from app.services.ingestion.wikipedia import (
     episode_list_candidates,
     parse_episode_list,
     parse_volume_list,
+    parse_work_summary,
     volume_list_candidates,
+    work_article_candidates,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -257,3 +259,190 @@ def test_volume_candidate_titles_are_specific_before_general() -> None:
         "List of Vinland Saga volumes",
         "Vinland Saga",
     ]
+
+
+# --- work-level summaries ------------------------------------------------
+#
+# The fallback parser, for works whose canonical source catalogues no
+# containers. It reads a section rather than a template, so what it *refuses*
+# is most of what makes it safe.
+
+
+def parsed_article():
+    return parse_work_summary(load("wikipedia_work_article.wikitext"))
+
+
+def test_work_summary_comes_from_the_narrative_section() -> None:
+    result = parsed_article()
+
+    assert result.summary is not None
+    assert result.summary.section == "Synopsis"
+    assert "beneath the tower" in result.summary.summary
+
+
+def test_work_summary_keeps_narrative_subsections() -> None:
+    """A "Premise" under "Synopsis" is still the story."""
+    summary = parsed_article().summary.summary
+
+    assert "grants whoever reaches its top" in summary
+
+
+def test_work_summary_drops_non_narrative_subsections() -> None:
+    result = parsed_article()
+
+    assert "character-list entry" not in result.summary.summary
+    assert {"subsection_not_narrative"} == {
+        item["reason"] for item in result.skipped if item["reason"] == "subsection_not_narrative"
+    }
+
+
+def test_work_summary_never_reaches_the_lead_or_the_other_sections() -> None:
+    """Everything outside the narrative section is article furniture."""
+    summary = parsed_article().summary.summary
+
+    for forbidden in (
+        "article furniture",
+        "Production notes",
+        "Reception prose",
+        "Official site",
+        "A publisher",
+        "A citation",
+    ):
+        assert forbidden not in summary
+
+
+def test_an_article_with_no_narrative_section_yields_nothing() -> None:
+    result = parse_work_summary("== Production ==\nNotes about how it was made.\n")
+
+    assert result.summary is None
+    assert [item["reason"] for item in result.skipped] == ["no_narrative_section"]
+
+
+def test_a_stub_section_is_refused_rather_than_stored() -> None:
+    result = parse_work_summary("== Plot ==\nA boy climbs a tower.\n")
+
+    assert result.summary is None
+    assert result.skipped[0]["reason"] == "summary_too_short"
+
+
+def test_work_article_candidates_try_disambiguated_titles_first() -> None:
+    candidates = work_article_candidates("Tower of God", None, "신의 탑")
+
+    assert candidates[0] == "Tower of God (webtoon)"
+    # The bare title is a last resort: it can be an article about anything.
+    assert candidates.index("Tower of God") > candidates.index("Tower of God (manhwa)")
+
+
+def test_a_plot_split_into_chapter_ranges_is_still_the_plot() -> None:
+    """Some articles put the whole plot in subsections named by span.
+
+    "Chapters 39-85" under "Plot" is part of the story; "Characters" is not,
+    and sits under the same heading on the same kind of page.
+    """
+    result = parse_work_summary(
+        "== Plot ==\n"
+        "{{Long plot|date=April 2022}}\n"
+        "=== Prologue, Chapters 1-38 ===\n"
+        "A shut-in discovers the building has begun turning people into "
+        "monsters, and that leaving is no longer the obvious thing to do.\n"
+        "=== Chapters 39-85 ===\n"
+        "The survivors organise, and discover that the rules of the change "
+        "are not what the first weeks made them look like.\n"
+        "=== Characters ===\n"
+        "* A shut-in, the protagonist of a character-list entry.\n"
+    )
+
+    assert result.summary is not None
+    assert "shut-in discovers the building" in result.summary.summary
+    assert "not what the first weeks" in result.summary.summary
+    assert "character-list entry" not in result.summary.summary
+
+
+def test_an_unknown_subsection_is_still_dropped() -> None:
+    """The span rule is a rule about spans, not a general loosening."""
+    result = parse_work_summary(
+        "== Plot ==\n"
+        "A boy climbs a tower that measures everyone who steps inside it, and "
+        "keeps climbing long after the reason he started has stopped being "
+        "the reason he continues. Each floor asks for something different, "
+        "and the higher he goes the less any of it looks like a test he can "
+        "pass without losing something.\n"
+        "=== Merchandise ===\n"
+        "Figures were released by a toy company in 2019.\n"
+    )
+
+    assert "Figures were released" not in result.summary.summary
+
+
+# --- what a removed template leaves behind -------------------------------
+#
+# Templates were dropped wholesale, which is right for a citation and wrong
+# for a template standing where a noun belongs: the punctuation around it
+# stayed and the word did not.
+
+
+def test_a_name_template_keeps_its_english_reading() -> None:
+    """The case that exposed this: three names in one sentence."""
+    cleaned = clean_wikitext(
+        "follows a high-school student, {{Nihongo|Kirie Goshima|五島桐絵}}; her "
+        "boyfriend, {{Nihongo|Shuichi Saito|斎藤秀一}}; and the citizens of "
+        "{{Nihongo|Kurouzu-cho|黒渦町|Black Vortex Town}}."
+    )
+
+    assert cleaned == (
+        "follows a high-school student, Kirie Goshima; her boyfriend, "
+        "Shuichi Saito; and the citizens of Kurouzu-cho."
+    )
+
+
+def test_a_language_template_keeps_the_text_not_the_language_code() -> None:
+    """`{{Lang|ja|X}}` leads with a code, so the text is the second parameter."""
+    assert clean_wikitext("she signs with her name ({{lang|ja|荻野千尋}})") == (
+        "she signs with her name (荻野千尋)"
+    )
+    assert clean_wikitext("the {{transliteration|ja|onsen}} trip") == "the onsen trip"
+
+
+def test_an_unknown_template_is_still_removed_entirely() -> None:
+    """The exceptions are a closed list, not a new default.
+
+    A citation, a footnote and a maintenance banner have no display text a
+    summary should carry, and guessing "the first parameter" would inject
+    exactly that furniture.
+    """
+    cleaned = clean_wikitext(
+        "{{Long plot|date=April 2022}}\nHe climbs.{{efn|A footnote.}}"
+        "{{sfn|Author|2020|p=4}} {{Reflist}}"
+    )
+
+    assert cleaned == "He climbs."
+
+
+def test_a_removed_footnote_does_not_leave_its_punctuation() -> None:
+    assert clean_wikitext(
+        "Eun-hyuk tasks Hyun-soo and Pyeon Sang-wook,{{efn|A note.}}, a resident."
+    ) == "Eun-hyuk tasks Hyun-soo and Pyeon Sang-wook, a resident."
+
+
+def test_a_bracket_emptied_by_a_removal_is_closed_up() -> None:
+    assert clean_wikitext("with her name ({{unknownref|x}}), Yubaba takes it") == (
+        "with her name, Yubaba takes it"
+    )
+
+
+def test_a_space_before_a_colon_is_left_alone() -> None:
+    """Ordinary English, not residue.
+
+    "Tokyo Ghoul :re" is a title. Closing that gap would corrupt text that
+    nothing was removed from, which is the one thing the tidy-up must never
+    do.
+    """
+    assert clean_wikitext("she establishes the :re cafe") == "she establishes the :re cafe"
+
+
+def test_a_template_nested_in_a_kept_parameter_is_resolved_too() -> None:
+    assert clean_wikitext("{{nowrap|{{Nihongo|Kirie|桐絵}}}} runs") == "Kirie runs"
+
+
+def test_templates_that_stand_for_one_character_do_not_merge_words() -> None:
+    assert clean_wikitext("five{{nbsp}}years later") == "five years later"

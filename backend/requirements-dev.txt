@@ -1,0 +1,13 @@
+# Everything the runtime needs, plus what only a developer or CI needs.
+#
+# Split out so a serving image does not carry a test runner. `requirements.txt`
+# is what the Dockerfiles install; this is what a laptop and a CI job install.
+#
+#   pip install -r requirements-dev.txt
+#
+# (preceded by the CPU torch wheel -- see the note in requirements.txt)
+
+-r requirements.txt
+
+pytest==8.3.4
+pytest-asyncio==0.25.0

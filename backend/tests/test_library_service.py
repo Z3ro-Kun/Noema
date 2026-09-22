@@ -8,10 +8,11 @@ Fixture-scoped throughout. Each test builds a tiny work of its own -- never
 the production corpus -- following the Phase 1J principle.
 """
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -622,3 +623,90 @@ async def test_library_can_be_filtered_by_domain(db_session: AsyncSession) -> No
         await library_service.list_library(db_session, user_id=user.id, domain_slug="anime")
         == []
     )
+
+
+# --- ordering -------------------------------------------------------------
+#
+# `updated_at` is written by the column's server-side `onupdate`, which is
+# `now()` -- and in Postgres that is transaction-start time, not statement
+# time. Entries touched in one transaction therefore hold the *same* instant,
+# and without a second sort key the database returns them in whatever order
+# it likes. The tests below hold the tie-break, not the ranking.
+
+
+async def _entries_sharing_one_timestamp(session: AsyncSession, count: int = 5):
+    """`count` library entries, all written inside one transaction.
+
+    No sleeping and no clock control: the tie is what naturally happens,
+    because every row takes its `updated_at` from the same `now()`.
+    """
+    user = await make_user(session, "ordering@example.test")
+    works = [await make_work(session, f"ordering-work-{index}") for index in range(count)]
+    for work in works:
+        await library_service.add_to_library(session, user_id=user.id, work_id=work.id)
+    await session.flush()
+    return user, works
+
+
+async def test_entries_touched_together_still_have_one_defined_order(
+    db_session: AsyncSession,
+) -> None:
+    user, works = await _entries_sharing_one_timestamp(db_session)
+
+    entries = await library_service.list_library(db_session, user_id=user.id)
+
+    assert len({entry.updated_at for entry in entries}) == 1, (
+        "the premise: these all share an instant"
+    )
+    assert [entry.work_id for entry in entries] == sorted(work.id for work in works)
+
+
+async def test_the_same_request_twice_returns_the_same_order(
+    db_session: AsyncSession,
+) -> None:
+    """An ordering that changes between identical requests is not an ordering."""
+    user, _ = await _entries_sharing_one_timestamp(db_session)
+
+    first = await library_service.list_library(db_session, user_id=user.id)
+    second = await library_service.list_library(db_session, user_id=user.id)
+
+    assert [entry.work_id for entry in first] == [entry.work_id for entry in second]
+
+
+async def test_paging_over_tied_entries_neither_repeats_nor_skips(
+    db_session: AsyncSession,
+) -> None:
+    """The failure a tie actually causes: an entry on page one and page two."""
+    user, works = await _entries_sharing_one_timestamp(db_session)
+
+    paged = []
+    for offset in range(0, len(works), 2):
+        page = await library_service.list_library(
+            db_session, user_id=user.id, limit=2, offset=offset
+        )
+        paged.extend(entry.work_id for entry in page)
+
+    assert len(set(paged)) == len(works)
+    assert sorted(paged) == sorted(work.id for work in works)
+
+
+async def test_recency_still_decides_before_the_tie_break(
+    db_session: AsyncSession,
+) -> None:
+    """`work_id` orders ties. It never outranks `updated_at`."""
+    user, works = await _entries_sharing_one_timestamp(db_session)
+    # The last work by id, so if the tie-break were winning it would sort last.
+    latest = max(works, key=lambda work: work.id)
+
+    await db_session.execute(
+        update(UserContentInteraction)
+        .where(
+            UserContentInteraction.user_id == user.id,
+            UserContentInteraction.work_id == latest.id,
+        )
+        .values(updated_at=datetime.now(timezone.utc) + timedelta(minutes=1))
+    )
+
+    entries = await library_service.list_library(db_session, user_id=user.id)
+
+    assert entries[0].work_id == latest.id

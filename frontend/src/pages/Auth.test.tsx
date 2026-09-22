@@ -416,18 +416,17 @@ describe('shared authentication state', () => {
     vi.stubGlobal('fetch', mockApi())
     render(<App />)
 
-    // Library is private, so an anonymous reader is sent to Login.
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    const nav = () => screen.getByRole('navigation', { name: 'Main' })
-    await user.click(
-      within(nav()).getByRole('button', { name: 'Library' }),
-    )
+    // The whole application is private, so an anonymous arrival is at Login
+    // before it is anywhere else.
     await screen.findByRole('heading', { level: 1, name: 'Log in' })
 
     await loginThroughApp(user)
 
-    // The intended destination is restored, which means the whole app now
-    // agrees the reader is authenticated.
+    // Signing in opens the product, which means the whole app now agrees the
+    // reader is authenticated.
+    await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
+    const nav = () => screen.getByRole('navigation', { name: 'Main' })
+    await user.click(within(nav()).getByRole('button', { name: 'Library' }))
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Library' }),
     ).toBeInTheDocument()
@@ -451,12 +450,10 @@ describe('shared authentication state', () => {
     vi.stubGlobal('fetch', mockApi())
     render(<App />)
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    const nav = () => screen.getByRole('navigation', { name: 'Main' })
-    await user.click(within(nav()).getByRole('button', { name: 'Library' }))
     await screen.findByRole('heading', { level: 1, name: 'Log in' })
     await loginThroughApp(user)
-    await screen.findByRole('heading', { level: 1, name: 'Library' })
+    await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
+    const nav = () => screen.getByRole('navigation', { name: 'Main' })
 
     await user.click(within(nav()).getByRole('button', { name: 'Discover' }))
     await user.click(await screen.findByText("Alice's Adventures in Wonderland"))
@@ -489,7 +486,8 @@ describe('shared authentication state', () => {
     vi.stubGlobal('fetch', mockApi({ signedIn: false }))
     render(<App />)
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
+    // A token the server rejects buys nothing: the reader ends at Login.
+    await screen.findByRole('heading', { level: 1, name: 'Log in' })
     await waitFor(() => expect(getSessionToken()).toBeNull())
     const meCalls = calls.filter((call) => call.url.includes('/auth/me'))
     expect(meCalls).toHaveLength(1)
@@ -500,24 +498,23 @@ describe('shared authentication state', () => {
     vi.stubGlobal('fetch', mockApi())
     render(<App />)
 
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    const nav = () => screen.getByRole('navigation', { name: 'Main' })
-    await user.click(within(nav()).getByRole('button', { name: 'Library' }))
     await screen.findByRole('heading', { level: 1, name: 'Log in' })
     await loginThroughApp(user)
+    await screen.findByRole('heading', { level: 1, name: 'Welcome back' })
+    const nav = () => screen.getByRole('navigation', { name: 'Main' })
+    await user.click(within(nav()).getByRole('button', { name: 'Library' }))
     await screen.findByRole('heading', { level: 1, name: 'Library' })
 
     await user.click(screen.getByRole('button', { name: 'Log out' }))
 
     await waitFor(() => expect(getSessionToken()).toBeNull())
-    // Signing out of a private page lands on Home, anonymous. It used to
-    // land on Login: the guard could not tell "you need an account for this"
-    // from "you just gave one up", so leaving the Library immediately asked
-    // the reader to come back.
+    // Signing out leaves the application. There is no signed-out Noema to be
+    // dropped on any more, so Login is the destination and the shell itself
+    // is gone with the session.
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Noema' }),
+      await screen.findByRole('heading', { level: 1, name: 'Log in' }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 1, name: 'Log in' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument()
   })
 })
