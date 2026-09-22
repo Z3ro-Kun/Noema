@@ -38,17 +38,19 @@ const DOMAIN_LABEL: Record<string, string> = {
 }
 
 /**
- * One field per medium, each a short walk between `surface` and `ink` with a
- * different bias -- literature cooler, anime warmer toward the accent, manga
- * greener. No new hue enters: every stop is one of the four palette colours
- * nudged toward another. The medium is printed in words on the plate too, so
- * nothing here depends on telling the three apart by colour.
+ * One flat ground per medium.
+ *
+ * These were three-stop linear gradients. The editorial system forbids
+ * gradients outright -- depth is a step in tone or a hairline, never a blend
+ * -- so each is now a single ink tone, one step apart from its neighbours.
+ * The difference between them is deliberately slight: the medium is printed
+ * in words on the plate as well, so nothing here depends on telling three
+ * dark greys apart by eye.
  */
 const DOMAIN_FIELD: Record<string, string> = {
-  literature:
-    'bg-[linear-gradient(158deg,#3f4f44_0%,#334138_58%,#2c3930_100%)]',
-  anime: 'bg-[linear-gradient(158deg,#4a4a3e_0%,#3a4038_58%,#2c3930_100%)]',
-  manhwa: 'bg-[linear-gradient(158deg,#3a4f47_0%,#31423a_58%,#2c3930_100%)]',
+  literature: 'bg-[#15171a]',
+  anime: 'bg-[#1b1a17]',
+  manhwa: 'bg-[#141a1b]',
 }
 
 /** Long titles need to step down or they overflow the plate. */

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import AppShell from '../components/AppShell'
 import type { ProductView } from '../components/AppShell'
 import SectionHeading from '../components/SectionHeading'
+import { FolioBar } from '../components/Editorial'
 import StateMessage from '../components/StateMessage'
-import WorkEntry from '../components/WorkEntry'
 import { fetchDiscoveryFacets, fetchWorks } from '../api/catalog'
 import { workSearch } from '../api/search'
 import { DEV_SURFACES } from '../lib/config'
-import { activityLine } from '../lib/labels'
 import type {
   DiscoveryFacets,
+  ProductWork,
+  UserWorkState,
   WorkListResponse,
   WorkSearchHit,
   WorkSearchResponse,
@@ -206,21 +208,178 @@ function SemanticEvidence({ hit }: { hit: WorkSearchHit }) {
 
   return (
     <details>
-      <summary className="cursor-pointer text-[0.62rem] uppercase tracking-label text-paper-faint transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+      <summary className="type-label cursor-pointer text-paper-faint transition-colors duration-150 hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper">
         Why it appeared
       </summary>
-      <div className="mt-3 border-l border-paper/10 pl-4">
-        <p className="text-[0.62rem] uppercase tracking-label text-paper-faint">{where}</p>
-        <p className="mt-2 font-display text-[0.95rem] font-light italic leading-relaxed text-paper-dim">
+      {/*
+        The export sets a matched passage as a pulled quote against an accent
+        rule, with "AFFINITY SCORE: 94.2%" beside it. The quote treatment is
+        kept and the score is not: a cosine distance is an internal
+        measurement, and printing it as a percentage invites a reader to
+        compare two numbers that were never on the same scale.
+      */}
+      <div className="mt-3 border-l border-accent-bright/40 pl-4">
+        <p className="type-label text-paper-faint">{where}</p>
+        <blockquote className="mt-2 font-display text-[0.95rem] font-light italic leading-relaxed text-paper-dim">
           {evidence.excerpt}
-        </p>
+        </blockquote>
         {evidence.matching_passages > 1 && (
-          <p className="mt-2 text-[0.62rem] uppercase tracking-label text-paper-faint">
+          <p className="type-label mt-2 text-paper-faint">
             {evidence.matching_passages} passages matched
           </p>
         )}
       </div>
     </details>
+  )
+}
+
+/**
+ * One result, as the export sets them out.
+ *
+ * Not a card in a grid. The Stitch catalogue gives every result the full width
+ * of the page and divides it four columns to eight: the record's identity on
+ * the left, what was actually found on the right, separated by a vertical
+ * rule. Results are stacked with a hairline between them, so a page of them
+ * reads as a register rather than as a wall of tiles.
+ *
+ * Both search modes use it, because the shape is the same question answered
+ * two ways. In title mode the right half carries the work's own synopsis; in
+ * theme mode it carries the passage that actually matched, set as a pulled
+ * quote with a note saying where in the work it came from.
+ *
+ * **No score.** The export prints `AFFINITY SCORE: 94.2%` in the corner of
+ * every one of these, and the bottom of its own page promises that no
+ * retrieval scores are exposed. Noema keeps the promise instead: `similarity`
+ * and `distance` arrive on every hit and neither is rendered, because a
+ * cosine distance is a measurement of the index rather than a statement about
+ * the work, and a percentage invites a reader to compare two numbers that
+ * were never on the same scale.
+ */
+function ResultArticle({
+  work,
+  state,
+  excerpt,
+  onOpenWork,
+}: {
+  work: ProductWork
+  state: UserWorkState | null
+  /** The matched passage, in theme mode. Absent in title mode. */
+  excerpt?: ReactNode
+  onOpenWork: (workId: string) => void
+}) {
+  const credited = work.creators
+    .slice(0, 2)
+    .map((creator) => creator.name)
+    .join(', ')
+
+  return (
+    <li>
+      <article className="grid gap-x-10 gap-y-5 border-b border-paper/10 py-6 transition-colors duration-150 hover:bg-canvas-soft/60 md:py-7 lg:grid-cols-12">
+        {/* --- the record ---------------------------------------------- */}
+        <div className="lg:col-span-4">
+          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="type-label border border-paper/20 px-2 py-1 text-accent-bright">
+              {work.domain.name}
+            </span>
+            <span className="type-num text-paper-faint">
+              {[work.media_format, work.year].filter(Boolean).join(' · ')}
+            </span>
+          </p>
+
+          <h3 className="mt-4">
+            <button
+              type="button"
+              onClick={() => onOpenWork(work.id)}
+              aria-label={`${work.title} — open this work`}
+              className="text-left font-display text-2xl font-light leading-tight text-paper transition-colors duration-150 hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+            >
+              {work.title}
+            </button>
+          </h3>
+          {credited && <p className="type-body-sm mt-2 text-paper-faint">{credited}</p>}
+
+          {/*
+            The export's inset registry block: the original title and the
+            record's own filing line, framed. Only rendered when the record
+            actually carries an original title — an empty frame is furniture.
+          */}
+          {work.original_title && work.original_title !== work.title && (
+            <div className="mt-5 border border-paper/10 bg-ink p-4">
+              <p className="font-display text-base font-light italic text-paper-dim">
+                {work.original_title}
+              </p>
+            </div>
+          )}
+
+          {state?.in_library && (
+            <p className="type-label mt-4 text-paper-dim">
+              In your library
+              {state.rating !== null && ` · rated ${state.rating}/10`}
+            </p>
+          )}
+        </div>
+
+        {/* --- what was found ------------------------------------------ */}
+        <div className="border-t border-paper/10 pt-6 lg:col-span-8 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
+          {excerpt ?? (
+            <>
+              <p className="type-label text-paper-faint">Synopsis</p>
+              {work.synopsis ? (
+                /*
+                  Clamped in the register, never on the work page.
+                  
+                  A full synopsis runs to a dozen lines, and twelve of them
+                  stacked made the results page four screens longer than the
+                  results themselves. Here it is an identifying paragraph and
+                  four lines is enough to recognise a work; the dossier is
+                  one click away and sets it in full, which is what that page
+                  is for.
+                */
+                <p className="mt-3 line-clamp-4 max-w-3xl font-display text-lg font-light leading-relaxed text-paper-dim">
+                  {work.synopsis}
+                </p>
+              ) : (
+                <p className="mt-3 font-display text-lg font-light italic text-paper-faint">
+                  No synopsis was supplied with this record.
+                </p>
+              )}
+            </>
+          )}
+
+          {work.concepts.length > 0 && (
+            <div className="mt-4">
+              <p className="type-label text-paper-faint">Themes</p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {work.concepts.slice(0, 5).map((concept) => (
+                  <li
+                    key={concept.slug}
+                    className="type-label border border-paper/15 px-2 py-1 text-paper-dim"
+                  >
+                    {concept.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="mt-5">
+            <button
+              type="button"
+              onClick={() => onOpenWork(work.id)}
+              className="type-label group inline-flex items-center gap-2 border border-paper/25 px-4 py-2.5 text-paper transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+            >
+              Open this work
+              <span
+                aria-hidden="true"
+                className="transition-transform duration-150 group-hover:translate-x-0.5"
+              >
+                &rarr;
+              </span>
+            </button>
+          </p>
+        </div>
+      </article>
+    </li>
   )
 }
 
@@ -420,24 +579,57 @@ export default function Discover({
       current="discover"
       onNavigate={onNavigate}
       bleed
+      folio={
+        <FolioBar
+          left={
+            <span className="type-label text-accent-bright">
+              Index // lexical and thematic
+            </span>
+          }
+          /*
+            The export puts "LATENCY: 0.04S · TEMPERATURE: 0.12 · MATCH
+            THRESHOLD: >= 0.81" here. None of those is a fact about the
+            catalogue and two of them are invented; what belongs on a registry
+            strip is how much is in the index, which is real and which the
+            facets already carry.
+          */
+          right={
+            corpusLine(facets) ? (
+              <span className="type-num text-paper-faint">{corpusLine(facets)}</span>
+            ) : undefined
+          }
+        />
+      }
       masthead={
         <div className="border-b border-paper/10">
-          <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
-            <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-              The collection
-            </p>
-            <h1 className="mt-5 font-display text-[2.6rem] font-light leading-[1.05] tracking-tight text-paper sm:text-5xl lg:text-[3.6rem]">
-              Discover
-            </h1>
-            <p className="mt-6 max-w-xl font-display text-lg font-light leading-relaxed text-paper-dim md:text-xl">
-              Everything Noema holds, across literature, anime and manga — search it
-              by title, or describe a theme and see what reads like it.
-            </p>
-            {corpusLine(facets) && (
-              <p className="mt-8 text-[0.66rem] uppercase tracking-label text-paper-faint">
-                {corpusLine(facets)}
+          <div className="mx-auto grid max-w-page gap-x-10 gap-y-5 px-5 py-7 sm:px-6 md:grid-cols-12 md:items-end md:py-9 lg:px-10">
+            <div className="md:col-span-8">
+              <p className="type-label text-paper-faint">The collection</p>
+              <h1 className="type-display mt-4 text-paper lg:text-[3.6rem] lg:leading-[1.05]">
+                Discover
+              </h1>
+            </div>
+            <div className="border-t border-paper/10 pt-6 md:col-span-4 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+              <p className="type-body text-paper-dim">
+                Everything Noema holds, across literature, anime and manga — search it
+                by title, or describe a theme and see what reads like it.
               </p>
-            )}
+              {/*
+                Per-medium counts, straight from `/works/facets`: the same
+                figures the filters below narrow to, so a reader who filters
+                finds the number they were shown.
+              */}
+              {facets?.domains && facets.domains.length > 0 && (
+                <dl className="mt-6 grid grid-cols-3 gap-4 border-t border-paper/10 pt-4">
+                  {facets.domains.map((entry) => (
+                    <div key={entry.value}>
+                      <dt className="type-label text-paper-faint">{entry.label}</dt>
+                      <dd className="type-num mt-1.5 text-paper-dim">{entry.count}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
           </div>
         </div>
       }
@@ -468,11 +660,11 @@ export default function Discover({
                     // below do not end up read out as part of the name.
                     aria-label={entry.label}
                     aria-describedby={`mode-${entry.value}-description`}
-                    className="group relative border-b border-paper/10 py-8 text-left last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:border-b-0 md:px-10 md:first:pl-0 md:last:pr-0"
+                    className="group relative border-b border-paper/10 py-5 text-left last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:border-b-0 md:px-10 md:first:pl-0 md:last:pr-0"
                   >
                     <span
-                      className={`block text-[0.62rem] uppercase tracking-label transition-colors duration-200 ${
-                        current ? 'text-accent' : 'text-paper-faint'
+                      className={`type-label block transition-colors duration-150 ${
+                        current ? 'text-accent-bright' : 'text-paper-faint'
                       }`}
                     >
                       {entry.eyebrow}
@@ -596,7 +788,7 @@ export default function Discover({
 
       {/* --- results -------------------------------------------------- */}
 
-      <section className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-16 lg:px-10">
+      <section className="mx-auto max-w-page px-5 py-8 sm:px-6 md:py-10 lg:px-10">
         {error && (
           <StateMessage
             kind="error"
@@ -657,20 +849,14 @@ export default function Discover({
               </div>
             ) : (
               <>
-                <ul className="mt-12 grid grid-cols-2 gap-x-6 gap-y-12 sm:gap-x-8 md:gap-y-14 lg:grid-cols-4">
-                  {results.items.map(({ work, user_state: state }, index) => (
-                    <li key={work.id}>
-                      <WorkEntry
-                        work={work}
-                        state={state}
-                        onOpen={onOpenWork}
-                        // The first row is above the fold on most screens.
-                        priority={index < 4}
-                        // Canonical facts sit above the rule; this is the
-                        // reader's own half, and it is null when anonymous.
-                        detail={state ? activityLine(state, work.domain.slug) : null}
-                      />
-                    </li>
+                <ul className="mt-6 border-t border-paper/10">
+                  {results.items.map(({ work, user_state: state }) => (
+                    <ResultArticle
+                      key={work.id}
+                      work={work}
+                      state={state}
+                      onOpenWork={onOpenWork}
+                    />
                   ))}
                 </ul>
 
@@ -753,17 +939,15 @@ export default function Discover({
               </div>
             ) : (
               <>
-                <ul className="mt-12 grid grid-cols-2 gap-x-6 gap-y-12 sm:gap-x-8 md:gap-y-14 lg:grid-cols-4">
-                  {semantic.results.map((hit, index) => (
-                    <li key={hit.work.id}>
-                      <WorkEntry
-                        work={hit.work}
-                        state={hit.user_state}
-                        onOpen={onOpenWork}
-                        priority={index < 4}
-                        detail={<SemanticEvidence hit={hit} />}
-                      />
-                    </li>
+                <ul className="mt-6 border-t border-paper/10">
+                  {semantic.results.map((hit) => (
+                    <ResultArticle
+                      key={hit.work.id}
+                      work={hit.work}
+                      state={hit.user_state}
+                      onOpenWork={onOpenWork}
+                      excerpt={<SemanticEvidence hit={hit} />}
+                    />
                   ))}
                 </ul>
 

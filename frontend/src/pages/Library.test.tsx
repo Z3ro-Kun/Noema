@@ -275,10 +275,12 @@ describe('Library dev harness', () => {
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
 
-    // Stated as an absence. Unrated is not a low score and must never be
-    // rendered as one.
-    expect(await screen.findByText(/not rated/)).toBeInTheDocument()
+    // Stated as an absence, in words. Unrated is not a low score and must
+    // never be rendered as one -- which in a ruled ledger also means never as
+    // a dash in the numeric column.
+    expect(await screen.findByText(/Not rated/)).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/rated 0\/10/)
+    expect(document.body.textContent).not.toMatch(/0 \/ 10/)
     const status = screen.getByLabelText('Status for Frankenstein')
     expect((status as HTMLSelectElement).value).toBe('completed')
   })
@@ -416,11 +418,17 @@ describe('Library product surface', () => {
     // Once, as a library entry. Browsing the shared corpus is Discover's job.
     expect(await screen.findAllByText('Vinland Saga')).toHaveLength(1)
     expect(screen.getByText('ヴィンランド・サガ')).toBeInTheDocument()
-    // Creator, medium and year on one quiet line -- enough to know which
-    // work this is, which is all a library row has to do.
+    // Creator, medium, format and year: enough to know which work this is,
+    // which is all a library row has to do. The ledger distributes them
+    // across its columns rather than joining them into one caption, so each
+    // is asserted where it now lives.
+    expect(screen.getByText('Makoto Yukimura')).toBeInTheDocument()
+    // The medium filter offers the same words, so the assertion is that the
+    // row states it -- not merely that the page contains it somewhere.
     expect(
-      screen.getByText(/Makoto Yukimura · Manga & Manhwa · MANGA · 2005/),
-    ).toBeInTheDocument()
+      screen.getAllByText('Manga & Manhwa').some((node) => node.tagName !== 'OPTION'),
+    ).toBe(true)
+    expect(screen.getByText(/MANGA · 2005/)).toBeInTheDocument()
   })
 
   it('leaves synopsis and label chips to the work page', async () => {
@@ -467,8 +475,10 @@ describe('Library product surface', () => {
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
 
-    // The user's half is labelled as theirs; the work's half is not.
-    expect(await screen.findByText('Your relationship')).toBeInTheDocument()
+    // The user's half is labelled as theirs; the work's half is not. Twice
+    // in the DOM and once on screen: the ledger's column head labels it from
+    // the medium breakpoint up, the row labels its own cell below that.
+    expect((await screen.findAllByText('Your relationship')).length).toBeGreaterThan(0)
     expect((screen.getByLabelText('Status for Frankenstein') as HTMLSelectElement).value).toBe(
       'completed',
     )
@@ -531,7 +541,13 @@ describe('Library status organisation', () => {
     { work: VINLAND, user_state: interaction({ status: 'completed', rating: 8 }).user_state },
   ]
 
-  it('groups the library by the states the backend already stores', async () => {
+  it('offers every state the backend stores as a way to narrow the ledger', async () => {
+    // The archive used to render a headed block per status, which meant a
+    // reader whose library was all completed scrolled past four large empty
+    // blocks to reach it. It is one ruled register now and the statuses are
+    // the tabs that filter it -- so what must hold is that every state the
+    // backend stores is still offered, and that the ledger under them holds
+    // the rows.
     const { fetchMock } = mockApi(MIXED)
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
@@ -539,7 +555,8 @@ describe('Library status organisation', () => {
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
 
-    for (const heading of [
+    for (const label of [
+      'All',
       'Reading & watching',
       'Planned',
       'On hold',
@@ -547,12 +564,13 @@ describe('Library status organisation', () => {
       'Abandoned',
     ]) {
       expect(
-        await screen.findByRole('heading', { name: new RegExp(heading) }),
+        await screen.findByRole('tab', { name: new RegExp(label) }),
       ).toBeInTheDocument()
     }
+    expect(await screen.findByText('Frankenstein')).toBeInTheDocument()
   })
 
-  it('gives every empty group a sentence rather than a blank', async () => {
+  it('reports an empty state as a zero on its tab, not as an empty block', async () => {
     const { fetchMock } = mockApi(MIXED)
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
@@ -560,9 +578,13 @@ describe('Library status organisation', () => {
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
 
-    expect(await screen.findByText('Nothing planned yet.')).toBeInTheDocument()
-    expect(screen.getByText('Nothing on hold yet.')).toBeInTheDocument()
-    expect(screen.getByText(/Nothing abandoned/)).toBeInTheDocument()
+    // MIXED holds nothing planned, on hold or abandoned. Each says so where a
+    // reader looks for it -- on the tab -- rather than by spending a screen
+    // on a headed block with a sentence in it.
+    for (const label of ['Planned', 'On hold', 'Abandoned']) {
+      const tab = await screen.findByRole('tab', { name: new RegExp(label) })
+      expect(tab.textContent).toMatch(/0$/)
+    }
   })
 
   it('labels each tab with a count from the summary', async () => {
@@ -633,24 +655,25 @@ describe('Library status organisation', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
-    // The grouped view holds the completed group too, so wait for the one
-    // group that is not gated.
-    await screen.findByRole('heading', { name: 'Reading & watching' })
+    // Anchored on a row rather than on a group head: the ledger has no group
+    // heads any more, and the row is what a reader would actually notice
+    // disappearing.
+    await screen.findByText('Frankenstein')
 
     armed = true
     await user.click(screen.getByRole('tab', { name: /Completed/ }))
 
-    // Mid-flight: the previous view is still on screen, and the page says
+    // Mid-flight: the previous rows are still on screen, and the page says
     // what it is doing rather than going blank.
-    expect(screen.getByRole('heading', { name: 'Reading & watching' })).toBeInTheDocument()
+    expect(screen.getByText('Frankenstein')).toBeInTheDocument()
     expect(await screen.findByText('Updating…')).toBeInTheDocument()
 
     release?.()
-    await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Reading & watching' })).not.toBeInTheDocument(),
+    await waitFor(() => expect(screen.queryByText('Updating…')).not.toBeInTheDocument())
+    expect(screen.getByRole('tab', { name: /Completed/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
     )
-    expect(screen.getByRole('heading', { name: 'Completed' })).toBeInTheDocument()
-    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
   })
 
   it('says what is missing when a chosen status is empty', async () => {
@@ -733,14 +756,13 @@ describe('Library status organisation', () => {
     await authenticate(user)
     await user.click(await screen.findByRole('button', { name: 'Show them' }))
 
-    // It is named as removed, and it is kept out of the status groups so it
-    // never sits beside works that are still on the shelf.
-    expect(await screen.findByRole('heading', { name: 'Removed' })).toBeInTheDocument()
-    const completed = screen
-      .getByRole('heading', { name: 'Completed' })
-      .closest('section') as HTMLElement
-    expect(within(completed).queryByText('Frankenstein')).not.toBeInTheDocument()
-    expect(within(completed).getByText('Vinland Saga')).toBeInTheDocument()
+    // It is named as removed, and it is kept in its own section so it never
+    // sits in the ledger beside works that are still on the shelf.
+    const removed = (
+      await screen.findByRole('heading', { name: 'Removed' })
+    ).closest('section') as HTMLElement
+    expect(within(removed).getByText('Frankenstein')).toBeInTheDocument()
+    expect(within(removed).queryByText('Vinland Saga')).not.toBeInTheDocument()
   })
 
   it('cannot show a group count that disagrees with the rows under it', async () => {
@@ -758,16 +780,15 @@ describe('Library status organisation', () => {
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
 
-    const completed = (
-      await screen.findByRole('heading', { name: 'Completed' })
-    ).closest('section') as HTMLElement
-    expect(within(completed).getByText('9 works')).toBeInTheDocument()
-    expect(within(completed).getAllByRole('listitem')).toHaveLength(6)
-    // The shortfall is stated rather than left to be inferred.
-    expect(within(completed).getByText('Showing 6 of 9')).toBeInTheDocument()
-    expect(
-      within(completed).getByRole('button', { name: /See all/ }),
-    ).toBeInTheDocument()
+    await screen.findAllByText('Frankenstein')
+    // The tab carries the server's total for the status; the ledger carries a
+    // prefix of it. The shortfall is stated outright rather than left to be
+    // inferred from a count that disagrees with the rows beneath it.
+    expect(screen.getByRole('tab', { name: /Completed/ }).textContent).toMatch(/9$/)
+    // Counted by the per-row status control rather than by <li>, which the
+    // tab strip also uses.
+    expect(screen.getAllByLabelText(/^Status for /).length).toBe(6)
+    expect(screen.getByText(/Showing 6 of 9/)).toBeInTheDocument()
   })
 
   it('asks the server for each group rather than splitting one page', async () => {
@@ -780,7 +801,7 @@ describe('Library status organisation', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
-    await screen.findByRole('heading', { name: 'Completed' })
+    await screen.findAllByText('Frankenstein')
 
     // One request per status in the vocabulary -- a constant, not an N+1.
     for (const status of ['in_progress', 'planned', 'on_hold', 'completed', 'abandoned']) {
@@ -822,7 +843,7 @@ describe('Library status organisation', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
-    await screen.findByRole('heading', { name: 'Reading & watching' })
+    await screen.findAllByText('Frankenstein')
 
     await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
 
@@ -843,7 +864,7 @@ describe('Library status organisation', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
-    await screen.findByRole('heading', { name: 'Reading & watching' })
+    await screen.findAllByText('Frankenstein')
 
     await user.selectOptions(screen.getByLabelText('Medium'), 'literature')
     await user.click(await screen.findByRole('tab', { name: /Completed/ }))
@@ -869,7 +890,7 @@ describe('Library status organisation', () => {
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
     await user.click(await screen.findByRole('tab', { name: /Completed/ }))
-    await screen.findByRole('heading', { name: 'Completed' })
+    await screen.findAllByText('Frankenstein')
     await user.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(calls.some((call) => call.url.includes('page=2'))).toBe(true))
 
@@ -891,7 +912,7 @@ describe('Library status organisation', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
-    await screen.findByRole('heading', { name: 'Reading & watching' })
+    await screen.findAllByText('Frankenstein')
 
     await user.selectOptions(screen.getByLabelText('Medium'), 'anime')
     await user.click(await screen.findByRole('button', { name: 'Show all media' }))
@@ -911,7 +932,7 @@ describe('Library status organisation', () => {
 
     render(<Library onNavigate={() => {}} onOpenWork={() => {}} />)
     await authenticate(user)
-    await screen.findByRole('heading', { name: 'Reading & watching' })
+    await screen.findAllByText('Frankenstein')
 
     expect(calls.every((call) => !call.url.includes('domain='))).toBe(true)
   })

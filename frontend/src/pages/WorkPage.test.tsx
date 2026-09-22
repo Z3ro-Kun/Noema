@@ -172,7 +172,13 @@ describe('WorkPage', () => {
       await screen.findByRole('heading', { level: 1, name: 'Cowboy Bebop' }),
     ).toBeInTheDocument()
     expect(screen.getByText('カウボーイビバップ')).toBeInTheDocument()
-    expect(screen.getByText(/Anime · TV · 1998/)).toBeInTheDocument()
+    // Medium, format and year are ruled across their own fields in the
+    // dossier head rather than joined into one caption, so each is asserted
+    // where it now lives.
+    expect(screen.getByText('Anime // TV')).toBeInTheDocument()
+    expect(screen.getAllByText('Anime').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('TV').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('1998').length).toBeGreaterThan(0)
     expect(screen.getByText('Bounty hunters in space.')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Genres' })).toBeInTheDocument()
     // Set as a sentence rather than one per line; the values stay distinct.

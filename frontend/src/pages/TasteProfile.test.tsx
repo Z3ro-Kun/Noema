@@ -263,7 +263,7 @@ describe('TasteProfile', () => {
 
   // --- the four groups -----------------------------------------------------
 
-  it('renders each group under its own heading', async () => {
+  it('voices each group on the finding it belongs to', async () => {
     renderPage({
       profile: dashboard({
         strongly_likes: [item()],
@@ -288,21 +288,33 @@ describe('TasteProfile', () => {
       }),
     })
 
-    expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /You seem drawn to/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /You tend to avoid/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Something Noema is noticing/ })).toBeInTheDocument()
+    // The three established groups are no longer drawers with headings over
+    // them -- the findings run as one numbered sequence, and each one says
+    // which group it belongs to beside its own name. What must survive is
+    // that the distinction is still stated, in the same words, on the right
+    // finding.
+    expect((await screen.findAllByText('You particularly enjoy'))[0]).toBeInTheDocument()
+    expect(screen.getByText('You seem drawn to')).toBeInTheDocument()
+    expect(screen.getByText('You tend to avoid')).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { level: 3, name: 'Psychological Depth' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'Tragedy' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'Fantasy' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: 'Identity' })).toBeInTheDocument()
+
+    // Emerging is not a thesis and is deliberately not set as one: it keeps
+    // its own section, its own heading and a ledger row rather than an
+    // argument, so it cannot be skim-read as established.
+    expect(
+      screen.getByRole('heading', { name: 'Something Noema is noticing' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Identity')).toBeInTheDocument()
+    expect(screen.getByText('Too early to call')).toBeInTheDocument()
   })
 
   it('omits a group with nothing in it rather than showing an empty block', async () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
-    await screen.findByRole('heading', { name: /You particularly enjoy/ })
+    await screen.findAllByText('You particularly enjoy')
     expect(screen.queryByRole('heading', { name: /You also enjoy/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /tend not to enjoy/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /beginning to notice/ })).not.toBeInTheDocument()
@@ -330,7 +342,7 @@ describe('TasteProfile', () => {
     })
 
     expect(await screen.findByText(/Too early to call these/)).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /You particularly enjoy/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('You particularly enjoy')).not.toBeInTheDocument()
   })
 
   // --- combinations --------------------------------------------------------
@@ -357,7 +369,7 @@ describe('TasteProfile', () => {
   it('renders a strong preference with moderate confidence as a clear liking', async () => {
     renderPage({ profile: dashboard({ strongly_likes: [item({ confidence_band: 'moderate' })] }) })
 
-    expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
+    expect((await screen.findAllByText('You particularly enjoy'))[0]).toBeInTheDocument()
     // No hedging verb anywhere: the group decides the wording, the band does not.
     expect(screen.queryByText(/might somewhat/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/possibly enjoy/i)).not.toBeInTheDocument()
@@ -370,7 +382,6 @@ describe('TasteProfile', () => {
      * this way -- the thing they can check -- rather than a word that graded
      * it for them.
      */
-    const user = userEvent.setup()
     const { container } = renderPage({
       profile: dashboard({ strongly_likes: [item({ confidence_band: 'moderate' })] }),
     })
@@ -378,7 +389,6 @@ describe('TasteProfile', () => {
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
     expect(container.textContent).not.toMatch(/confidence/i)
 
-    await user.click(screen.getByText(/Why does Noema think this/))
     expect(container.textContent).not.toMatch(/confidence/i)
     expect(
       screen.getByText(/Several of your ratings point this way, and they mostly agree/),
@@ -397,7 +407,7 @@ describe('TasteProfile', () => {
       }),
     })
 
-    await screen.findByRole('heading', { name: /You particularly enjoy/ })
+    await screen.findAllByText('You particularly enjoy')
     const body = document.body.textContent ?? ''
     for (const forbidden of [
       'preference_evidence',
@@ -416,7 +426,6 @@ describe('TasteProfile', () => {
   // --- evidence ------------------------------------------------------------
 
   it('gives the counts behind a preference without the arithmetic', async () => {
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({
         strongly_likes: [
@@ -436,19 +445,18 @@ describe('TasteProfile', () => {
       await screen.findByText(/You've rated 5 works across Anime and Literature that share it/),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByText(/Why does Noema think this/))
-    expect(screen.getByText(/It turns up in 7 works you have come across/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/it turns up in 7 works you have come across in all/),
+    ).toBeInTheDocument()
     expect(screen.getByText(/Going back says you kept reading/)).toBeInTheDocument()
   })
 
   it('says when the evidence cannot tell two findings apart', async () => {
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({ strongly_likes: [item({ also_supported_by: ['Tragedy', 'Drama'] })] }),
     })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.getByText(/Tragedy and Drama just as well/)).toBeInTheDocument()
   })
@@ -561,7 +569,7 @@ describe('TasteProfile', () => {
       profile: dashboard({ strongly_likes: [item()], what_stands_out: [STANDOUT] }),
     })
 
-    expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
+    expect((await screen.findAllByText('You particularly enjoy'))[0]).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What stands out' })).toBeInTheDocument()
     expect(screen.getByText(/Built from 6 ratings/)).toBeInTheDocument()
   })
@@ -572,7 +580,6 @@ describe('TasteProfile', () => {
     // The overview lists a different concept first. A positional join would
     // attach Tragedy's evidence to Psychological Depth; the slug is what
     // decides, so the wrong one must not appear.
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({ strongly_likes: [item()] }),
       overview: overview({
@@ -625,7 +632,6 @@ describe('TasteProfile', () => {
     })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.getByText(/4 rated . 3 positive . 1 negative . average 8\.3\/10/)).toBeInTheDocument()
     expect(screen.getByText('The Right Work')).toBeInTheDocument()
@@ -634,7 +640,6 @@ describe('TasteProfile', () => {
   })
 
   it('shows only the evidence fields that have something to say', async () => {
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({ strongly_likes: [item()] }),
       overview: overview({
@@ -653,7 +658,6 @@ describe('TasteProfile', () => {
     })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     // Nothing was abandoned or put on hold, so neither is stated as a finding.
     expect(screen.queryByText(/abandoned/)).not.toBeInTheDocument()
@@ -664,7 +668,6 @@ describe('TasteProfile', () => {
   it('states reconsumption once, with the count rather than the adjective', async () => {
     // The dashboard boolean and the overview count said the same thing. The
     // one with a number in it is the better of the two.
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({
         strongly_likes: [
@@ -701,7 +704,6 @@ describe('TasteProfile', () => {
     })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(
       screen.getByText(/Returned to 1 of them \(6 completions in total\)/),
@@ -712,7 +714,6 @@ describe('TasteProfile', () => {
   it('keeps the plain statement when there is no count to give', async () => {
     // Without an overview signal the boolean is the only evidence there is,
     // so it is still said.
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({
         strongly_likes: [
@@ -731,7 +732,6 @@ describe('TasteProfile', () => {
     })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.getByText(/Some of these are works you went back to/)).toBeInTheDocument()
   })
@@ -767,7 +767,7 @@ describe('TasteProfile', () => {
       overviewFails: true,
     })
 
-    expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
+    expect((await screen.findAllByText('You particularly enjoy'))[0]).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'Psychological Depth' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What stands out' })).toBeInTheDocument()
     // The profile is poorer, not broken, and says nothing went wrong.
@@ -796,11 +796,11 @@ describe('TasteProfile', () => {
     expect(within(band).getByText('Identity')).toBeInTheDocument()
     expect(within(band).getByText(/not rated enough of them/)).toBeInTheDocument()
 
-    // And it is not inside any group that claims a preference.
-    const strongly = screen
-      .getByRole('heading', { name: /You particularly enjoy/ })
+    // And it is not inside the section that claims established preferences.
+    const established = screen
+      .getByRole('heading', { name: 'Established preferences' })
       .closest('section') as HTMLElement
-    expect(within(strongly).queryByText('Identity')).not.toBeInTheDocument()
+    expect(within(established).queryByText('Identity')).not.toBeInTheDocument()
   })
 
   it('asks for nothing at all while signed out', async () => {
@@ -824,17 +824,22 @@ describe('TasteProfile', () => {
 
   // --- feedback ------------------------------------------------------------
 
-  it('offers the feedback question from inside the details, never as a prompt', async () => {
-    const user = userEvent.setup()
+  it('offers the feedback question quietly, never as a prompt', async () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    expect(screen.queryByRole('button', { name: 'Yes' })).not.toBeVisible()
 
-    await user.click(screen.getByText(/Why does Noema think this/))
-    expect(screen.getByText('Does this feel right?')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Yes' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Not really' })).toBeVisible()
+    // It used to be hidden behind the evidence disclosure. The evidence is
+    // now always open, so the question is too -- what still matters is that
+    // it is at the foot of the ledger the finding rests on rather than
+    // anywhere a reader has to answer it to use the page.
+    const question = screen.getByRole('group', { name: 'Does this feel right?' })
+    expect(question).toBeVisible()
+    expect(within(question).getByRole('button', { name: 'Yes' })).toBeVisible()
+    expect(within(question).getByRole('button', { name: 'Not really' })).toBeVisible()
+
+    const ledger = screen.getByText('What this rests on').closest('div')
+    expect(ledger?.parentElement).toContainElement(question)
   })
 
   it('sends the canonical concept slug, never the display name', async () => {
@@ -842,7 +847,6 @@ describe('TasteProfile', () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
     await user.click(screen.getByRole('button', { name: 'Yes' }))
 
     await waitFor(() => expect(posted).toHaveLength(1))
@@ -854,13 +858,12 @@ describe('TasteProfile', () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
     await user.click(screen.getByRole('button', { name: 'Not really' }))
 
     const confirmation = await screen.findByText(/Thanks — Noema will use this/)
     expect(confirmation).toHaveTextContent(/Nothing above has changed yet/)
     // And the preference itself is still where the backend put it.
-    expect(screen.getByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
+    expect(screen.getAllByText('You particularly enjoy')[0]).toBeInTheDocument()
   })
 
   it('records a disagreement as a disagreement, not as a dislike', async () => {
@@ -868,7 +871,6 @@ describe('TasteProfile', () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
     await user.click(screen.getByRole('button', { name: 'Not really' }))
 
     await waitFor(() => expect(posted).toHaveLength(1))
@@ -878,7 +880,6 @@ describe('TasteProfile', () => {
   })
 
   it('shows an answer already on record when the page loads', async () => {
-    const user = userEvent.setup()
     renderPage({
       profile: dashboard({ strongly_likes: [item()] }),
       feedback: [
@@ -895,7 +896,6 @@ describe('TasteProfile', () => {
     })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.getByRole('button', { name: /Yes/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Not really' })).toHaveAttribute('aria-pressed', 'false')
@@ -907,7 +907,6 @@ describe('TasteProfile', () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
     await user.click(screen.getByRole('button', { name: 'Yes' }))
     await waitFor(() => expect(posted).toHaveLength(1))
     await user.click(screen.getByRole('button', { name: 'Not really' }))
@@ -924,7 +923,6 @@ describe('TasteProfile', () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }), feedbackPostFails: true })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
     await user.click(screen.getByRole('button', { name: 'Yes' }))
 
     expect(await screen.findByText(/That did not save/)).toBeInTheDocument()
@@ -932,22 +930,18 @@ describe('TasteProfile', () => {
   })
 
   it('does not offer feedback on a combination, and says why', async () => {
-    const user = userEvent.setup()
     renderPage({ profile: dashboard({ strongly_likes: [COMBINATION] }) })
 
     await screen.findByText('Combination')
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.getByText(/Feedback on combinations is not available yet/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Yes' })).not.toBeInTheDocument()
   })
 
   it('does not ask for feedback on an emerging signal', async () => {
-    const user = userEvent.setup()
     renderPage({ profile: dashboard({ emerging: [item()] }) })
 
     await screen.findByRole('heading', { name: /Something Noema is noticing/ })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.queryByText('Does this feel right?')).not.toBeInTheDocument()
   })
@@ -972,7 +966,7 @@ describe('TasteProfile', () => {
     )
     render(<TasteProfile onNavigate={() => {}} onOpenLibrary={() => {}} />)
 
-    expect(await screen.findByRole('heading', { name: /You particularly enjoy/ })).toBeInTheDocument()
+    expect((await screen.findAllByText('You particularly enjoy'))[0]).toBeInTheDocument()
   })
 
   // --- accessibility basics ------------------------------------------------
@@ -986,18 +980,16 @@ describe('TasteProfile', () => {
       }),
     })
 
-    await screen.findByRole('heading', { name: /You particularly enjoy/ })
+    await screen.findAllByText('You particularly enjoy')
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('heading', { level: 2 }).length).toBeGreaterThanOrEqual(3)
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(2)
   })
 
   it('gives every control an accessible name', async () => {
-    const user = userEvent.setup()
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     for (const button of screen.getAllByRole('button')) {
       expect(button).toHaveAccessibleName()
@@ -1005,30 +997,27 @@ describe('TasteProfile', () => {
   })
 
   it('labels the feedback choices as a group', async () => {
-    const user = userEvent.setup()
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    await user.click(screen.getByText(/Why does Noema think this/))
 
     expect(screen.getByRole('group', { name: 'Does this feel right?' })).toBeInTheDocument()
   })
 
-  it('puts the details panel and its controls in the tab order', async () => {
-    const user = userEvent.setup()
+  it('puts the evidence controls in the tab order', async () => {
     renderPage({ profile: dashboard({ strongly_likes: [item()] }) })
 
     await screen.findByRole('heading', { level: 3, name: 'Psychological Depth' })
-    const summary = screen.getByText(/Why does Noema think this/)
 
-    // A native <summary> is focusable and toggles on Enter in a browser.
-    // jsdom does not implement that default action, so what is asserted here
-    // is reachability -- the part a wrong markup choice would actually break.
-    summary.focus()
-    expect(summary).toHaveFocus()
-
-    await user.click(summary)
-    await user.tab()
-    expect(screen.getByRole('button', { name: 'Yes' })).toHaveFocus()
+    // The evidence used to sit behind a <summary> disclosure and this test
+    // checked that the disclosure was reachable. The ledger is now always
+    // open -- the export sets the evidence beside the claim rather than
+    // underneath a toggle -- so what is left to protect is the part a wrong
+    // markup choice would actually break: the controls are focusable and in
+    // document order.
+    const yes = screen.getByRole('button', { name: 'Yes' })
+    yes.focus()
+    expect(yes).toHaveFocus()
+    expect(screen.getByRole('group', { name: 'Does this feel right?' })).toContainElement(yes)
   })
 })

@@ -157,114 +157,34 @@ function renderPage(options: Options = {}, props: Record<string, unknown> = {}) 
   )
 }
 
-describe('Home, signed out', () => {
+describe('Home is a signed-in surface', () => {
   beforeEach(() => {
     resetSessionForTests()
     setSessionToken(null)
     vi.unstubAllGlobals()
   })
 
-  it('explains what Noema is without demanding an account', async () => {
-    renderPage()
+  /**
+   * Home used to carry a whole anonymous landing page, and this block used to
+   * test it: a proposition, a three-medium directory, a sign-in panel, and
+   * the assertion that none of it named a work or called the API.
+   *
+   * The authentication gate ended that. `App` sends an anonymous reader to
+   * `/login` before Home renders, so the branch became unreachable and has
+   * been deleted rather than left as a surface nobody can visit. What
+   * replaces those tests is the one thing still worth pinning: rendered
+   * without a reader, the page shows nobody's shelves and nobody's address.
+   */
+  it('shows nothing personal when there is no reader', async () => {
+    renderPage({ signedIn: false })
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
-    expect(
-      screen.getByText(/reads across literature, anime and manga as one collection/),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
-    expect(screen.getByText(/Browsing is open to everyone/)).toBeInTheDocument()
-  })
-
-  it('introduces Noema rather than featuring a work', async () => {
-    renderPage()
-
-    // The landing is about the product. An earlier pass featured whichever
-    // work sorted first, which put a record with no synopsis in the most
-    // prominent position on the page.
-    expect(
-      await screen.findByRole('heading', { name: /Keep what you read and watch in one place/ }),
-    ).toBeInTheDocument()
-    expect(screen.getByText(/not a rating site and not a recommender/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'How it works' })).toBeInTheDocument()
-  })
-
-  it('names the three media it covers', async () => {
-    renderPage()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    for (const label of ['Literature', 'Anime', 'Manga & Manhwa']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
-    }
-  })
-
-  it('names no work, and asks the API for nothing', async () => {
-    renderPage()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-
-    // The catalogue and its detail are the signed-in experience. Nothing on
-    // the landing names a work, and no request goes out to fetch one.
-    expect(screen.queryByText("Alice's Adventures in Wonderland")).not.toBeInTheDocument()
-    expect(screen.queryByText('Cowboy Bebop')).not.toBeInTheDocument()
-    expect(requests.filter((url) => url.includes('/api/v1/works'))).toHaveLength(0)
-    expect(requests.filter((url) => url.includes('/api/v1/library'))).toHaveLength(0)
-    expect(requests.filter((url) => url.includes('/preferences'))).toHaveLength(0)
-  })
-
-  it('exposes no private user information', async () => {
-    const { container } = renderPage()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    const rendered = container.textContent ?? ''
-    expect(rendered).not.toContain('reader@example.test')
-    expect(rendered).not.toMatch(/Your library|Recent activity|Your taste/)
-    // No synopsis, no rating, no library state -- there is no work here at all.
-    expect(rendered).not.toMatch(/rated \d+\/10|In your library|No synopsis/)
-  })
-
-  it('cannot be broken by a catalogue failure it never calls', async () => {
-    renderPage({ worksFail: true })
-
-    // Nothing is fetched, so there is nothing to fail.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Noema' })).toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-
-  it('carries a chosen medium into Discover', async () => {
-    const user = userEvent.setup()
-    const explore = vi.fn()
-    renderPage({}, { onExplore: explore })
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    await user.click(screen.getByRole('button', { name: 'Anime' }))
-
-    expect(explore).toHaveBeenCalledWith({ domain: 'anime' })
-  })
-
-  it('routes to the catalogue without naming anything in it', async () => {
-    const user = userEvent.setup()
-    const navigate = vi.fn()
-    renderPage({}, { onNavigate: navigate })
-
-    await user.click(
-      await screen.findByRole('button', { name: 'Browse the catalogue first' }),
-    )
-    expect(navigate).toHaveBeenCalledWith('discover')
-  })
-
-  it('triggers no library action for an anonymous visitor', async () => {
-    const user = userEvent.setup()
-    renderPage()
-
-    await screen.findByRole('heading', { level: 1, name: 'Noema' })
-    // There is no add control at all, and nothing here can write.
-    expect(screen.queryByRole('button', { name: /Add to library/ })).not.toBeInTheDocument()
-
-    // Two CTAs point at Register -- the hero and the sign-in block.
-    await user.click(screen.getAllByRole('button', { name: 'Create an account' })[0])
-    expect(
-      requests.filter((url) => url.includes('/api/v1/library')),
-    ).toHaveLength(0)
+    // Not an empty library -- no library at all. The gate means this state is
+    // only ever the moment a stored session is being restored, so it says so
+    // rather than rendering a reader's sections with nobody's data in them.
+    expect(await screen.findByText('Checking your session…')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Recent activity' })).not.toBeInTheDocument()
+    expect(screen.queryByText(ACCOUNT.email)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument()
   })
 })
 

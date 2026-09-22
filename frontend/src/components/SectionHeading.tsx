@@ -42,7 +42,7 @@ export default function SectionHeading({
       <div className="max-w-2xl">
         <p
           className={`text-[0.66rem] uppercase tracking-label ${
-            paper ? 'text-surface' : 'text-paper-faint'
+            paper ? 'text-ink-faint' : 'text-paper-faint'
           }`}
         >
           {label}
@@ -58,7 +58,7 @@ export default function SectionHeading({
         {description && (
           <p
             className={`mt-3 max-w-xl text-[0.88rem] leading-relaxed ${
-              paper ? 'text-surface' : 'text-paper-dim'
+              paper ? 'text-ink-faint' : 'text-paper-dim'
             }`}
           >
             {description}
@@ -71,8 +71,11 @@ export default function SectionHeading({
           type="button"
           onClick={action.onClick}
           className={`group inline-flex shrink-0 items-center gap-2 self-start border-b pb-0.5 text-[0.8rem] transition-colors duration-200 sm:self-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            // Ember is 1.95:1 on the band and 8.5:1 on ink, so only the dark
+            // tone lets the accent carry the word. On the band it moves the
+            // rule and the text stays ink.
             paper
-              ? 'border-ink/25 text-ink hover:border-accent hover:text-accent focus-visible:outline-accent'
+              ? 'border-ink/25 text-ink hover:border-accent focus-visible:outline-ink'
               : 'border-paper/20 text-paper-dim hover:border-accent hover:text-accent focus-visible:outline-accent'
           }`}
         >

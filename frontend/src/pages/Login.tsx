@@ -43,6 +43,8 @@ export default function Login({ onAuthenticated, onRegister, onHome }: LoginProp
   return (
     <AuthLayout
       title="Log in"
+      index="01"
+      eyebrow="Reader access // returning"
       standfirst="Your library and your taste profile are waiting."
       onHome={onHome}
       footer={

@@ -1,19 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import AppShell from '../components/AppShell'
 import type { ProductView } from '../components/AppShell'
 import SectionHeading from '../components/SectionHeading'
-import SignInPrompt from '../components/SignInPrompt'
+import { Chip, SectionMarker } from '../components/Editorial'
+import WorkLedgerRow, { LedgerHead } from '../components/WorkLedgerRow'
 import StateMessage from '../components/StateMessage'
 import WorkEntry from '../components/WorkEntry'
-import { fetchWorks } from '../api/catalog'
+import WorkPlate from '../components/WorkPlate'
+import { fetchDiscoveryFacets, fetchWorks } from '../api/catalog'
 import { fetchTasteDashboard } from '../api/dashboard'
 import { dismissRecommendation, fetchRecommendations } from '../api/recommendations'
 import { addToLibrary, fetchLibrary, fetchLibrarySummary } from '../api/library'
 import { useSession } from '../auth/session'
-import { activityLine } from '../lib/labels'
+import { statusLabel } from '../lib/labels'
 import { hedge, leadPhrase, supportLine } from '../lib/taste'
 import type {
+  DiscoveryFacets,
   LibrarySummary,
   PreferenceBucket,
   Recommendation,
@@ -224,251 +227,57 @@ function Masthead({
   })
 
   return (
-    <div className="mx-auto max-w-page px-5 pb-12 pt-14 sm:px-6 md:pb-16 md:pt-20 lg:px-10">
+    <div className="mx-auto max-w-page px-5 pb-5 pt-5 sm:px-6 md:pb-6 md:pt-6 lg:px-10">
       {/*
-        The second column is laid out only when there is something to put in
-        it. Reserving it unconditionally left the signed-out masthead with
-        half its width empty.
+        The broadsheet split: eight columns of headline, four of standfirst and
+        register, divided by a rule rather than by space. The second column is
+        laid out only when there is something true to put in it -- reserving it
+        unconditionally left half the masthead empty.
       */}
       <div
-        className={`grid gap-8 ${
-          stats && stats.length > 0
-            ? 'lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end'
-            : ''
+        className={`grid gap-x-10 gap-y-8 ${
+          stats && stats.length > 0 ? 'md:grid-cols-12 md:items-end' : ''
         }`}
       >
-        <div>
-          <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">{date}</p>
-          <h1 className="mt-5 max-w-3xl font-display text-[2.6rem] font-light leading-[1.05] tracking-tight text-paper sm:text-6xl lg:text-[4.25rem]">
+        <div className="md:col-span-8">
+          <p className="type-label flex flex-wrap items-center gap-x-3 gap-y-1 text-paper-faint">
+            <span aria-hidden="true" className="h-1.5 w-1.5 bg-accent-bright" />
+            Personal registry
+            <span aria-hidden="true" className="text-paper-faint/50">
+              /
+            </span>
+            <span className="type-num normal-case tracking-normal">{date}</span>
+          </p>
+          <h1 className="type-display mt-3 max-w-3xl text-paper lg:text-[3rem] lg:leading-[1.05]">
             {heading}
           </h1>
-          <p className="mt-6 max-w-xl font-display text-lg font-light leading-relaxed text-paper-dim md:text-xl">
-            {standfirst}
-          </p>
         </div>
 
         {/*
-          Two counts, read straight from /library/summary. The prototype's
-          second figure was "Rated in March"; no month-scoped count is
-          exposed, so this is a lifetime total.
+          Standfirst and register share the right column, separated by a rule.
+          The two counts are read straight from /library/summary; there is no
+          month-scoped count exposed, so they are lifetime totals and say so.
         */}
-        {stats && stats.length > 0 && (
-          <dl className="flex gap-10 border-t border-paper/10 pt-6 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
-            {stats.map((stat) => (
-              <div key={stat.label}>
-                <dt className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-                  {stat.label}
-                </dt>
-                <dd className="mt-2 font-display text-4xl font-light text-paper">
-                  {stat.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        <div className="border-t border-paper/10 pt-6 md:col-span-4 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+          <p className="type-body text-paper-dim">{standfirst}</p>
+          {stats && stats.length > 0 && (
+            <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-paper/10 pt-3">
+              {stats.map((stat) => (
+                <div key={stat.label} className="flex items-baseline gap-2">
+                  <dt className="type-label text-paper-faint">{stat.label}</dt>
+                  <dd className="font-display text-2xl font-light tabular-nums leading-none text-paper">
+                    {stat.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-/* -------------------------------------------------------------------------
- * The signed-out landing
- * ---------------------------------------------------------------------- */
-
-/**
- * Introduces *Noema*, not a work.
- *
- * An earlier pass featured the first work alphabetically, which put a real
- * record with no synopsis and one generic theme in the most prominent
- * position on the page -- an accident of sort order presented as an editorial
- * choice.
- *
- * More than that it is a product boundary: the catalogue and its detail are
- * the signed-in experience. So nothing here names a work, and **this branch
- * issues no API request at all**. There is no work grid padding it out,
- * because a fuller-looking page is not a reason to hand out the thing the
- * boundary exists to hold.
- *
- * What fills the space instead is the same full-bleed cinematic band the
- * prototype used -- the strengthened CSS atmosphere, the scrim, `lg:py-36` --
- * carrying a statement of what Noema does.
- */
-function AnonymousHome({
-  onNavigate,
-  onExplore,
-  signInRef,
-}: {
-  onNavigate: (view: ProductView) => void
-  onExplore: (filter: { domain?: string }) => void
-  signInRef: React.RefObject<HTMLDivElement | null>
-}) {
-  return (
-    <>
-      <section
-        aria-labelledby="proposition-heading"
-        className="atmosphere grain relative border-y border-paper/10"
-      >
-        <div aria-hidden="true" className="absolute inset-0 hidden md:block scrim-left" />
-        <div aria-hidden="true" className="absolute inset-0 bg-ink/45 md:hidden" />
-
-        <div className="relative mx-auto max-w-page px-5 py-20 sm:px-6 md:py-28 lg:px-10 lg:py-36">
-          <div className="max-w-2xl">
-            <p className="text-[0.66rem] uppercase tracking-label text-accent">
-              A reading and watching notebook
-            </p>
-            <h2
-              id="proposition-heading"
-              className="mt-5 font-display text-[2.4rem] font-light leading-[1.08] tracking-tight text-paper sm:text-[3.2rem]"
-            >
-              Keep what you read and watch in one place, and let the themes come
-              out of it.
-            </h2>
-            <p className="mt-6 max-w-xl font-display text-lg font-light leading-relaxed text-paper/85 md:text-xl">
-              Noema is not a rating site and not a recommender. It reads the
-              ratings you give and tells you which themes they keep returning
-              to &mdash; across a novel, a series and a manga alike.
-            </p>
-
-            <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
-              <button
-                type="button"
-                onClick={() =>
-                  signInRef.current?.scrollIntoView?.({
-                    behavior: 'smooth',
-                    block: 'center',
-                  })
-                }
-                className="group inline-flex items-center gap-2 border-b border-accent pb-1 text-[0.85rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Create an account
-                <span
-                  aria-hidden="true"
-                  className="transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-                >
-                  &#8599;
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('discover')}
-                className="text-[0.85rem] text-paper-dim transition-colors duration-200 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Browse the catalogue first
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section aria-labelledby="loop-heading" className="border-b border-paper/10">
-        <div className="mx-auto max-w-page px-5 sm:px-6 lg:px-10">
-          <h2
-            id="loop-heading"
-            className="pt-16 text-[0.66rem] uppercase tracking-label text-paper-faint md:pt-20"
-          >
-            How it works
-          </h2>
-          <ol className="mt-2 grid divide-y divide-paper/10 md:grid-cols-3 md:divide-x md:divide-y-0">
-            {[
-              {
-                n: 'One',
-                title: 'Track',
-                line: 'Add what you have read or watched, and move it through planned, in progress, completed, on hold or abandoned.',
-              },
-              {
-                n: 'Two',
-                title: 'Rate',
-                line: 'Finishing something is not the same as liking it, so a rating is its own act. Unrated stays unrated.',
-              },
-              {
-                n: 'Three',
-                title: 'See the themes',
-                line: 'Noema reads your ratings and names the themes behind them, with the works that support each one.',
-              },
-            ].map((step) => (
-              <li key={step.n} className="md:px-10 md:first:pl-0 md:last:pr-0">
-                <div className="flex h-full flex-col py-12">
-                  <p className="text-[0.62rem] uppercase tracking-label text-accent">{step.n}</p>
-                  <p className="mt-4 font-display text-3xl font-light text-paper">
-                    {step.title}
-                  </p>
-                  <p className="mt-4 max-w-xs text-[0.88rem] leading-relaxed text-paper-dim">
-                    {step.line}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="media-heading"
-        className="border-b border-paper/10 bg-surface"
-      >
-        <div className="mx-auto max-w-page px-5 py-16 sm:px-6 md:py-20 lg:px-10">
-          <SectionHeading
-            id="media-heading"
-            label="Three media, one collection"
-            title="Literature, anime and manga, read together"
-            description="Held as one collection, so a theme can be followed from a novel into a series without changing tools."
-            action={{ label: 'Explore everything', onClick: () => onNavigate('discover') }}
-          />
-          <ul className="mt-10 grid divide-y divide-paper/10 border-t border-paper/10 md:grid-cols-3 md:divide-x md:divide-y-0">
-            {DOMAINS.map((domain) => (
-              <li key={domain.slug} className="md:px-10 md:first:pl-0 md:last:pr-0">
-                <button
-                  type="button"
-                  onClick={() => onExplore({ domain: domain.slug })}
-                  className="group flex w-full items-baseline justify-between gap-4 py-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                >
-                  <span className="font-display text-2xl font-light text-paper transition-colors duration-200 group-hover:text-accent">
-                    {domain.label}
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className="text-paper-faint transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-accent"
-                  >
-                    &rarr;
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section aria-labelledby="signin-heading" ref={signInRef}>
-        <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-24 lg:px-10">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:gap-20">
-            <div>
-              <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-                Keep a shelf
-              </p>
-              <h2
-                id="signin-heading"
-                className="mt-4 font-display text-3xl font-light leading-[1.1] text-paper md:text-[2.4rem]"
-              >
-                Track what you read
-              </h2>
-              <p className="mt-6 max-w-sm text-[0.88rem] leading-relaxed text-paper-dim">
-                An account is only needed to keep a library and build a taste
-                profile. Browsing is open to everyone.
-              </p>
-            </div>
-            <div className="max-w-md">
-              <SignInPrompt
-                detail="Keep a library, rate what you finish, and Noema starts naming the themes behind it."
-                onLogin={() => onNavigate('login')}
-                onRegister={() => onNavigate('register')}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-    </>
-  )
-}
 
 /* -------------------------------------------------------------------------
  * The feature
@@ -489,92 +298,157 @@ function Feature({
   action: ReactNode
 }) {
   const { work, user_state: state } = entry
-  const facts = [work.creators[0]?.name, work.media_format, work.year]
-    .filter(Boolean)
-    .join(' · ')
+  const credited = work.creators
+    .slice(0, 2)
+    .map((creator) => creator.name)
+    .join(', ')
 
   return (
-    <section
-      aria-labelledby="feature-heading"
-      className="atmosphere grain relative border-y border-paper/10"
-    >
-      {/* Legibility scrim over the wash, so the type keeps its contrast. */}
-      <div aria-hidden="true" className="absolute inset-0 hidden md:block scrim-left" />
-      <div aria-hidden="true" className="absolute inset-0 bg-ink/45 md:hidden" />
+    <section aria-labelledby="feature-heading" className="border-b border-paper/10">
+      {/*
+        Tightened deliberately. The plate is a 2:3 portrait, and at five of
+        twelve columns it set the height of the whole block -- so on a laptop
+        a reader had to scroll before they could see the feature they had
+        been shown the head of. The plate is now capped and centred in its
+        column, the padding is closer, and the synopsis is clamped, which
+        brings the block inside a normal viewport without changing what it is.
+      */}
+      <div className="mx-auto max-w-page px-5 py-6 sm:px-6 md:py-7 lg:px-10">
+        <SectionMarker index="01" label={eyebrow} folio="Featured" />
 
-      <div className="relative mx-auto max-w-page px-5 py-20 sm:px-6 md:py-28 lg:px-10 lg:py-36">
-        <div className="max-w-xl">
+        {/*
+          The asymmetric split the export uses for its plate showcase: five
+          columns of specimen, seven of rationale, divided by a rule rather
+          than by a gap. Both halves sit inside one hairline frame, so the
+          whole thing reads as a single mounted plate.
+        */}
+        <div className="mt-5 grid border border-paper/10 bg-ink lg:grid-cols-12">
           {/*
-            The theme, not "featured artwork". Nothing here claims the
-            background depicts this work, because it depicts nothing.
+            --- the plate ------------------------------------------------
+
+            The artwork fills its column edge to edge rather than floating in
+            the middle of one. Two passes ago this plate set the height of the
+            whole feature and pushed it past the fold; the fix then was to
+            shrink the cover, which produced the opposite fault -- a thumbnail
+            adrift in a large empty box.
+
+            Height is controlled by the column instead. The image keeps its
+            2:3 ratio and takes the full width it is given, and the block is
+            kept short by the *number of columns* the plate occupies, by tight
+            padding, and by the type beside it -- never by making the artwork
+            smaller. There is no inner frame and no padding around it: the
+            column edge is the frame, which is how a printed plate sits.
           */}
-          <p className="text-[0.66rem] uppercase tracking-label text-accent">{eyebrow}</p>
-
-          <h2
-            id="feature-heading"
-            className="mt-5 font-display text-[2.6rem] font-light leading-[1.05] tracking-tight text-paper sm:text-[3.4rem]"
-          >
-            {work.title}
-          </h2>
-
-          {work.original_title && work.original_title !== work.title && (
-            <p className="mt-2 font-display text-lg font-light italic text-paper-dim">
-              {work.original_title}
-            </p>
-          )}
-
-          {facts && <p className="mt-4 text-[0.85rem] text-paper-dim">{facts}</p>}
-
-          {work.synopsis ? (
-            <p className="mt-6 font-display text-lg font-light italic leading-relaxed text-paper/90 md:text-xl">
-              {work.synopsis}
-            </p>
-          ) : (
-            // Gutenberg states no description, so literature has none. Said
-            // rather than left as a gap in the composition.
-            <p className="mt-6 font-display text-lg font-light italic leading-relaxed text-paper-faint">
-              No synopsis was supplied with this record.
-            </p>
-          )}
-
-          {work.concepts.length > 0 && (
-            <p className="mt-5 text-[0.82rem] leading-relaxed text-paper-faint">
-              {work.concepts
-                .slice(0, 4)
-                .map((concept) => concept.name)
-                .join(' · ')}
-            </p>
-          )}
-
-          {mechanism && (
-            <p className="mt-5 max-w-lg text-[0.8rem] leading-relaxed text-paper-faint">
-              {mechanism}
-            </p>
-          )}
-
-          <div className="mt-9 flex flex-wrap items-center gap-x-8 gap-y-4">
+          <div className="border-b border-paper/10 bg-ink-soft lg:col-span-3 lg:border-b-0 lg:border-r">
             <button
               type="button"
               onClick={() => onOpenWork(work.id)}
-              className="group inline-flex items-center gap-2 border-b border-accent pb-1 text-[0.85rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              aria-label={`${work.title} — open this work`}
+              className="block w-full max-w-[16rem] lg:max-w-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
             >
-              Open this work
-              <span
-                aria-hidden="true"
-                className="transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-              >
-                &#8599;
-              </span>
+              <WorkPlate work={work} priority />
             </button>
+          </div>
 
-            {state && state.in_library ? (
-              <p className="text-[0.85rem] text-paper-dim">
-                In your library
-                {state.rating !== null && ` · rated ${state.rating}/10`}
-              </p>
-            ) : (
-              action
-            )}
+          {/* --- the rationale -------------------------------------------- */}
+          <div className="flex flex-col gap-5 p-5 md:p-7 lg:col-span-9">
+            <div>
+              {/*
+                Chips say only what is true of this reader and this work: the
+                medium, and — when they hold it — their own status and rating.
+                Nothing here is a score.
+              */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Chip>{work.domain.name}</Chip>
+                {state?.in_library && <Chip tone="stated">In your library</Chip>}
+                {state && <Chip tone="stated">{statusLabel(state.status)}</Chip>}
+                {state?.rating != null && <Chip tone="marked">Rated {state.rating}/10</Chip>}
+              </div>
+
+              <h2
+                id="feature-heading"
+                className="type-headline-lg mt-5 text-paper md:text-[2.2rem] md:leading-[1.1]"
+              >
+                {work.title}
+              </h2>
+              {work.original_title && work.original_title !== work.title && (
+                <p className="mt-2 font-display text-lg font-light italic text-paper-dim">
+                  {work.original_title}
+                </p>
+              )}
+
+              {work.synopsis ? (
+                <blockquote className="mt-4 line-clamp-2 border-l border-accent-bright/40 pl-5 font-display text-lg font-light leading-relaxed text-paper">
+                  {work.synopsis}
+                </blockquote>
+              ) : (
+                // Gutenberg states no description, so literature has none.
+                // Said in words rather than left as a gap in the composition.
+                <p className="mt-6 border-l border-paper/15 pl-5 font-display text-lg font-light italic leading-relaxed text-paper-faint">
+                  No synopsis was supplied with this record.
+                </p>
+              )}
+
+              {mechanism && (
+                <p className="type-body mt-5 max-w-xl text-paper-dim">{mechanism}</p>
+              )}
+            </div>
+
+            {/* --- what the record actually holds ------------------------ */}
+            <div>
+              {/*
+                One ruled line rather than a grid of cells. Four stacked
+                label-over-value blocks wrapped to two rows here and pushed
+                the whole feature past the fold; the same four facts read
+                just as well inline, and the feature fits a laptop.
+              */}
+              <dl className="flex flex-wrap items-baseline gap-x-8 gap-y-2 border-t border-paper/10 pt-4">
+                {[
+                  credited && { label: 'Credited', value: credited },
+                  work.media_format && { label: 'Format', value: work.media_format },
+                  work.year !== null && { label: 'Year', value: String(work.year) },
+                  work.concepts.length > 0 && {
+                    label: 'Themes',
+                    value: work.concepts
+                      .slice(0, 3)
+                      .map((concept) => concept.name)
+                      .join(' · '),
+                  },
+                ]
+                  .filter((entry): entry is { label: string; value: string } => Boolean(entry))
+                  .map((entry) => (
+                    <div key={entry.label} className="flex items-baseline gap-2">
+                      <dt className="type-label text-paper-faint">{entry.label}</dt>
+                      <dd className="type-body text-paper">{entry.value}</dd>
+                    </div>
+                  ))}
+              </dl>
+
+              <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4">
+                <button
+                  type="button"
+                  onClick={() => onOpenWork(work.id)}
+                  className="type-label group inline-flex items-center gap-2 border border-paper/25 px-4 py-2.5 text-paper transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+                >
+                  Open this work
+                  <span
+                    aria-hidden="true"
+                    className="transition-transform duration-150 group-hover:translate-x-0.5"
+                  >
+                    &rarr;
+                  </span>
+                </button>
+
+                {state && state.in_library ? (
+                  <p className="type-body text-paper-dim">
+                    In your library
+                    {state.rating !== null && ` · rated ${state.rating}/10`}
+                  </p>
+                ) : (
+                  action
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -588,11 +462,11 @@ function Feature({
 
 export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
   const session = useSession()
-  const signInRef = useRef<HTMLDivElement | null>(null)
 
   const [recent, setRecent] = useState<WorkPresentation[]>([])
   const [dashboard, setDashboard] = useState<TasteDashboard | null>(null)
   const [summary, setSummary] = useState<LibrarySummary | null>(null)
+  const [facets, setFacets] = useState<DiscoveryFacets | null>(null)
   const [shelves, setShelves] = useState<Shelf[]>([])
   const [suggested, setSuggested] = useState<RecommendationResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -605,16 +479,18 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
       // The library is the only required call. A taste profile or a summary
       // that fails must not take the page with it -- the reader's own history
       // is still worth showing.
-      const [library, profile, counts, recommended] = await Promise.all([
+      const [library, profile, counts, recommended, index] = await Promise.all([
         fetchLibrary({ page_size: RECENT_LIMIT }),
         fetchTasteDashboard().catch(() => null),
         fetchLibrarySummary().catch(() => null),
         fetchRecommendations(RECOMMENDATION_LIMIT).catch(() => null),
+        fetchDiscoveryFacets().catch(() => null),
       ])
       setRecent(library.items)
       setDashboard(profile)
       setSummary(counts)
       setSuggested(recommended)
+      setFacets(index)
       setError(null)
 
       if (profile) {
@@ -659,6 +535,7 @@ export default function Home({ onNavigate, onOpenWork, onExplore }: HomeProps) {
     setSummary(null)
     setShelves([])
     setSuggested(null)
+    setFacets(null)
     setLoading(false)
   }, [session.loading, session.account, loadForReader])
 
@@ -727,7 +604,7 @@ function RecommendationShelf({
       aria-labelledby="recommended-heading"
       className="border-b border-paper/10"
     >
-      <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-24 lg:px-10">
+      <div className="mx-auto max-w-page px-5 py-9 sm:px-6 md:py-11 lg:px-10">
         <SectionHeading
           id="recommended-heading"
           label="From your ratings"
@@ -738,7 +615,7 @@ function RecommendationShelf({
               : undefined
           }
         />
-        <div className="mt-12">
+        <div className="mt-7">
           {dismissError && (
             <div className="mb-8">
               <StateMessage
@@ -871,19 +748,26 @@ function RecommendationShelf({
         </div>
       )}
 
-      {session.loading ? (
+      {/*
+        The signed-out branch is gone.
+
+        Home used to carry a whole anonymous landing page -- a proposition, a
+        three-media directory, a sign-in panel -- because Noema was once
+        browsable without an account. It is not: the authentication gate in
+        `App` sends an anonymous reader to `/login` before this component
+        renders, so that branch had become ~200 lines that nothing could
+        reach. Its one genuinely useful part, the medium directory, is now a
+        section of the signed-in page below, where it has real counts.
+
+        The loading state stays, because `session.loading` is real: the gate
+        renders nothing while a stored session is being restored, and this is
+        the moment just after, before the reader's own data has arrived.
+      */}
+      {session.loading || !session.account ? (
         <div className="mx-auto max-w-page px-5 py-16 sm:px-6 lg:px-10">
           <StateMessage kind="loading" title="Checking your session…" />
         </div>
-      ) : !session.account ? (
-        /* --- signed out: a public landing, and no work data ------------- */
-        <AnonymousHome
-          onNavigate={onNavigate}
-          onExplore={onExplore}
-          signInRef={signInRef}
-        />
       ) : (
-        /* --- signed in --------------------------------------------------- */
         <>
           {(error || loading) && (
             <div className="mx-auto max-w-page px-5 py-10 sm:px-6 lg:px-10">
@@ -913,22 +797,35 @@ function RecommendationShelf({
             />
           )}
 
-          {/* --- still open ---------------------------------------------- */}
+          {/* --- § 02 the active engagement ledger ------------------------ */}
           {!loading && (
             <section aria-labelledby="continue-heading" className="border-b border-paper/10">
-              <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-24 lg:px-10">
-                <SectionHeading
-                  id="continue-heading"
-                  label="Where you left off"
-                  title="Recent activity"
-                  action={
+              <div className="mx-auto max-w-page px-5 py-9 sm:px-6 md:py-11 lg:px-10">
+                <SectionMarker
+                  index="02"
+                  label="Continue // active engagement ledger"
+                  folio={
                     recent.length > 0
-                      ? { label: 'Your whole library', onClick: () => onNavigate('library') }
+                      ? `${recent.length} ${recent.length === 1 ? 'entry' : 'entries'} · most recent first`
                       : undefined
                   }
                 />
+                <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+                  <h2 id="continue-heading" className="type-headline-lg text-paper">
+                    Recent activity
+                  </h2>
+                  {recent.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('library')}
+                      className="type-label border-b border-paper/25 pb-1 text-paper-dim transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+                    >
+                      Your whole library
+                    </button>
+                  )}
+                </div>
 
-                <div className="mt-12">
+                <div className="mt-6">
                   {recent.length === 0 ? (
                     <StateMessage
                       kind="empty"
@@ -938,28 +835,26 @@ function RecommendationShelf({
                         <button
                           type="button"
                           onClick={() => onNavigate('discover')}
-                          className="border-b border-accent pb-0.5 text-[0.85rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          className="type-label border-b border-accent-bright pb-0.5 text-paper transition-colors duration-150 hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
                         >
                           Find something to add
                         </button>
                       }
                     />
                   ) : (
-                    <ul className="rail -mx-5 flex snap-x snap-mandatory gap-6 overflow-x-auto px-5 pb-2 md:mx-0 md:grid md:grid-cols-5 md:gap-8 md:overflow-visible md:px-0">
-                      {recent.map(({ work, user_state: state }) => (
-                        <li
-                          key={work.id}
-                          className="w-[44vw] min-w-[160px] shrink-0 snap-start sm:w-[30vw] md:w-auto"
-                        >
-                          <WorkEntry
+                    <>
+                      <LedgerHead />
+                      <ul>
+                        {recent.map(({ work, user_state: state }) => (
+                          <WorkLedgerRow
+                            key={work.id}
                             work={work}
                             state={state}
                             onOpen={onOpenWork}
-                            detail={state ? activityLine(state, work.domain.slug) : null}
                           />
-                        </li>
-                      ))}
-                    </ul>
+                        ))}
+                      </ul>
+                    </>
                   )}
                 </div>
               </div>
@@ -981,49 +876,64 @@ function RecommendationShelf({
               <section
                 key={shelf.concept}
                 aria-labelledby={`shelf-${shelf.concept}`}
-                className="border-b border-paper/10 bg-surface"
+                className="border-b border-paper/10 bg-ink/40"
               >
-                <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-28 lg:px-10">
-                  <div className="grid gap-12 lg:grid-cols-[19rem_minmax(0,1fr)] lg:gap-16">
+                <div className="mx-auto max-w-page px-5 py-9 sm:px-6 md:py-11 lg:px-10">
+                  <SectionMarker
+                    index="03"
+                    label="Cross-medium exploration"
+                    folio={`${shelf.works.length} works carry this theme`}
+                  />
+
+                  <div className="mt-6 grid gap-8 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-12">
                     <div className="lg:sticky lg:top-28 lg:self-start">
-                      <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-                        One thread, three media
-                      </p>
+                      <p className="type-label text-accent-bright">One thread, three media</p>
                       <h2
                         id={`shelf-${shelf.concept}`}
-                        className="mt-4 font-display text-4xl font-light italic leading-[1.1] text-paper md:text-[2.9rem]"
+                        /*
+                          Italic on the heading rather than on the theme name
+                          inside it. Wrapping just the name in an <em> puts a
+                          second element on the page whose whole text is that
+                          name, which makes `getByText(label)` ambiguous
+                          against the taste band below -- a real ambiguity for
+                          a screen reader too, not only for a test.
+                        */
+                        className="type-headline-lg mt-4 italic text-paper md:text-[2.6rem] md:leading-[1.08]"
                       >
                         Because you enjoy {shelf.label}
                       </h2>
-                      <p className="mt-6 text-[0.9rem] leading-relaxed text-paper-dim">
+                      <p className="type-body mt-4 text-paper-dim">
                         Works tagged with this theme. Not ranked for you — the same list
                         anyone gets by filtering Discover on {shelf.label}.
                       </p>
                       <button
                         type="button"
                         onClick={() => onExplore({ concept: shelf.concept })}
-                        className="group mt-8 inline-flex items-center gap-2 border-b border-paper/25 pb-1 text-[0.82rem] text-paper transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        className="type-label group mt-6 inline-flex items-center gap-2 border border-paper/25 px-4 py-2.5 text-paper transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
                       >
                         See all
                         <span
                           aria-hidden="true"
-                          className="transition-transform duration-200 group-hover:translate-x-1"
+                          className="transition-transform duration-150 group-hover:translate-x-1"
                         >
                           &rarr;
                         </span>
                       </button>
                     </div>
 
-                    <ul className="rail -mx-5 flex snap-x snap-mandatory gap-6 overflow-x-auto px-5 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-x-8 sm:gap-y-12 sm:overflow-visible sm:px-0 lg:grid-cols-4">
-                      {shelf.works.map(({ work, user_state: state }, index) => (
+                    {/*
+                      The export sets these out as mounted specimens, each in
+                      its own hairline cell with the medium named at the head.
+                      Straight columns rather than the old stagger: a ruled
+                      grid is what makes the three media read as a comparison.
+                    */}
+                    <ul className="rail -mx-5 flex snap-x snap-mandatory gap-5 overflow-x-auto px-5 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+                      {shelf.works.map(({ work, user_state: state }) => (
                         <li
                           key={work.id}
-                          className={`w-[58vw] min-w-[180px] shrink-0 snap-start sm:w-auto ${
-                            index % 2 === 1 ? 'lg:mt-14' : ''
-                          }`}
+                          className="w-[58vw] min-w-[180px] shrink-0 snap-start border border-paper/10 bg-ink p-4 transition-colors duration-150 hover:border-paper/25 sm:w-auto"
                         >
-                          {/* The medium, called out the way the prototype did. */}
-                          <p className="mb-3 text-[0.62rem] uppercase tracking-label text-accent">
+                          <p className="type-label mb-3 text-accent-bright">
                             {work.domain.name}
                           </p>
                           <WorkEntry work={work} state={state} onOpen={onOpenWork} />
@@ -1048,24 +958,39 @@ function RecommendationShelf({
               */
               className="atmosphere-paper grain-paper border-y border-ink/15 text-ink"
             >
-              <div className="mx-auto max-w-page px-5 py-20 sm:px-6 md:py-28 lg:px-10">
-                <div className="grid gap-12 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-20">
+              <div className="mx-auto max-w-page px-5 py-10 sm:px-6 md:py-12 lg:px-10">
+                <SectionMarker
+                  index="04"
+                  label="Observed preference"
+                  folio={
+                    ratedWorks > 0
+                      ? `${plural(ratedWorks, 'work rated', 'works rated')}`
+                      : undefined
+                  }
+                  tone="paper"
+                />
+                <div className="mt-6 grid gap-10 lg:grid-cols-[20rem_minmax(0,1fr)] lg:gap-14">
                   <div>
-                    <p className="text-[0.66rem] uppercase tracking-label text-surface">
-                      Your taste
-                    </p>
+                    <p className="type-label text-ink-faint">Your taste</p>
                     <h2
                       id="taste-heading"
-                      className="mt-4 max-w-sm font-display text-4xl font-light leading-[1.1] md:text-[2.9rem]"
+                      className="type-headline-lg mt-4 max-w-sm text-ink md:text-[2.6rem] md:leading-[1.08]"
                     >
                       What Noema has noticed so far
                     </h2>
-                    <p className="mt-6 max-w-sm text-[0.9rem] leading-relaxed text-surface">
+                    <p className="type-body mt-4 max-w-sm text-ink-faint">
                       Read from your ratings, nothing else. Your taste takes shape as
                       you rate more.
                     </p>
+                    {/*
+                      The export repeats its epigraph here and again in the
+                      footer. Noema's footer already carries it, and a thesis
+                      stated twice on one page reads as decoration rather than
+                      as a claim -- so this band points at it instead, and
+                      Your Taste is where it is set at scale.
+                    */}
                     {ratedWorks > 0 && (
-                      <p className="mt-4 text-[0.85rem] text-surface">
+                      <p className="type-body-sm mt-4 text-ink-faint">
                         From {plural(ratedWorks, 'work you have rated', 'works you have rated')}.
                       </p>
                     )}
@@ -1079,7 +1004,7 @@ function RecommendationShelf({
                         indicator needs. Ink is 6.48:1 at the darkest point
                         the wash behind it reaches.
                       */
-                      className="group mt-8 inline-flex items-center gap-2 border-b border-ink/30 pb-1 text-[0.85rem] transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                      className="type-label group mt-6 inline-flex items-center gap-2 border border-ink/30 px-4 py-2.5 text-ink transition-colors duration-150 hover:border-accent hover:bg-ink hover:text-band focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                     >
                       {strongest ? 'View your full taste profile' : 'View your taste profile'}
                       <span
@@ -1096,16 +1021,16 @@ function RecommendationShelf({
                       {rows.map((row) => (
                         <div
                           key={row.key}
-                          className="grid gap-3 py-7 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-baseline sm:gap-10"
+                          className="grid gap-2 py-5 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-baseline sm:gap-10"
                         >
                           <div>
-                            <p className="text-[0.62rem] uppercase tracking-label text-surface">
+                            <p className="text-[0.62rem] uppercase tracking-label text-ink-faint">
                               {row.lead}
                             </p>
                             <dt className="mt-2 font-display text-2xl font-light leading-tight md:text-[1.75rem]">
                               {row.name}
                             </dt>
-                            <dd className="mt-2 text-[0.85rem] leading-relaxed text-surface">
+                            <dd className="mt-2 text-[0.85rem] leading-relaxed text-ink-faint">
                               {row.support}
                             </dd>
                           </div>
@@ -1116,7 +1041,7 @@ function RecommendationShelf({
                             column is simply empty rather than padded.
                           */}
                           {row.hedge && (
-                            <p className="text-[0.8rem] leading-relaxed text-surface sm:pt-1">
+                            <p className="text-[0.8rem] leading-relaxed text-ink-faint sm:pt-1">
                               {row.hedge}
                             </p>
                           )}
@@ -1128,7 +1053,7 @@ function RecommendationShelf({
                       <p className="font-display text-[1.75rem] font-light leading-[1.2] md:text-[2.25rem]">
                         Keep rating works to build your taste profile.
                       </p>
-                      <p className="mt-4 max-w-md text-[0.9rem] leading-relaxed text-surface">
+                      <p className="mt-4 max-w-md text-[0.9rem] leading-relaxed text-ink-faint">
                         {ratedWorks > 0
                           ? `You have rated ${plural(ratedWorks, 'work', 'works')}. Nothing has settled into a preference yet.`
                           : 'Ratings are what tell Noema whether you enjoyed something — finishing it only says you got to the end.'}
@@ -1140,6 +1065,81 @@ function RecommendationShelf({
             </section>
           )}
 
+          {/* --- § 05 the archival corpus --------------------------------- */}
+          {!loading && (
+            <section aria-labelledby="corpus-heading" className="border-b border-paper/10">
+              <div className="mx-auto max-w-page px-5 py-9 sm:px-6 md:py-11 lg:px-10">
+                {/*
+                  The export heads this section "Explore the archival corpus".
+                  "Corpus" is on Noema's forbidden list for reader-facing copy
+                  -- it is what the engineering calls the holding, not what a
+                  reader calls it -- and `lib/vocabulary.test.ts` enforces
+                  that. The editorial register survives the substitution;
+                  the implementation word does not come back.
+                */}
+                <SectionMarker
+                  index="05"
+                  label="Explore the collection"
+                  folio={`${DOMAINS.length} media`}
+                />
+                <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+                  <h2 id="corpus-heading" className="type-headline-lg max-w-2xl text-paper">
+                    Literature, anime and manga, read together
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('discover')}
+                    className="type-label border-b border-paper/25 pb-1 text-paper-dim transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+                  >
+                    Explore everything
+                  </button>
+                </div>
+
+                {/*
+                  Counts come from `/works/facets`, which is the same figure
+                  Discover filters on -- so a reader who clicks through finds
+                  exactly the number they were shown. When the facets request
+                  fails the medium is still offered, without a count: an
+                  unknown number is not a zero.
+                */}
+                <ul className="mt-6 grid border-t border-paper/10 md:grid-cols-3">
+                  {DOMAINS.map((domain) => {
+                    // Optional all the way down: the request can fail, and a
+                    // response can arrive without the field. Neither is a
+                    // reason to take the directory off the page.
+                    const facet = facets?.domains?.find((entry) => entry.value === domain.slug)
+                    return (
+                      <li
+                        key={domain.slug}
+                        className="border-b border-paper/10 md:border-b-0 md:border-r md:last:border-r-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onExplore({ domain: domain.slug })}
+                          className="group flex w-full flex-col gap-2 px-1 py-5 text-left transition-colors duration-150 hover:bg-canvas-soft md:px-6 md:first:pl-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+                        >
+                          <span className="type-label text-accent-bright">
+                            {facet ? `${facet.count} in the catalogue` : 'In the catalogue'}
+                          </span>
+                          <span className="flex items-baseline justify-between gap-4">
+                            <span className="font-display text-2xl font-light text-paper transition-colors duration-150 group-hover:text-accent-bright">
+                              {domain.label}
+                            </span>
+                            <span
+                              aria-hidden="true"
+                              className="text-paper-faint transition-transform duration-150 group-hover:translate-x-0.5"
+                            >
+                              &rarr;
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -1148,7 +1148,7 @@ function RecommendationShelf({
         thing on the page because it is the claim everything above rests on.
       */}
       <footer className="border-t border-paper/10 bg-ink">
-        <div className="mx-auto max-w-page px-5 py-16 sm:px-6 md:py-20 lg:px-10">
+        <div className="mx-auto max-w-page px-5 py-9 sm:px-6 md:py-11 lg:px-10">
           <div className="max-w-2xl">
             <p className="font-display text-xl font-light text-paper">Noema</p>
             <p className="mt-5 font-display text-lg font-light italic leading-relaxed text-paper-dim md:text-xl">

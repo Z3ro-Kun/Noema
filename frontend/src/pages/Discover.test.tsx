@@ -139,15 +139,16 @@ describe('Discover', () => {
     expect(screen.getByRole('button', { name: 'Show everything' })).toBeInTheDocument()
   })
 
-  it('renders a grid entry from the public contract alone', async () => {
+  it('renders a result from the public contract alone', async () => {
     renderPage({ page: listPage([presentation(ANIME, userState({ rating: 8 }))]) })
 
     expect(await screen.findByText('Cowboy Bebop')).toBeInTheDocument()
-    // The plate carries the medium and the year; the caption carries the
-    // credit, and neither is invented.
-    expect(screen.getByText(/Anime · 1998/)).toBeInTheDocument()
+    // The record's own facts: the medium as a tag, the format and year as a
+    // filing line. Neither is invented.
+    expect(screen.getAllByText('Anime').length).toBeGreaterThan(0)
+    expect(screen.getByText(/TV · 1998/)).toBeInTheDocument()
     // The reader's own state is marked, and marked as theirs.
-    expect(screen.getByText(/Planned to start, rated 8\/10/)).toBeInTheDocument()
+    expect(screen.getByText(/In your library · rated 8\/10/)).toBeInTheDocument()
   })
 
   it('shows nothing of the reader to an anonymous visitor', async () => {
@@ -159,16 +160,52 @@ describe('Discover', () => {
     expect(screen.queryByText(/rated/)).not.toBeInTheDocument()
   })
 
-  it('leaves synopsis and label chips to the work page', async () => {
-    // A deliberate reduction, not an omission: the browse grid is for
-    // looking, and a column of clamped descriptions under rows of chips is
-    // what made this page read as a query interface. Both still appear in
-    // full on WorkPage, which has its own tests for them.
+  it('gives each result its synopsis and its themes', async () => {
+    // This reverses an earlier decision, deliberately. The page used to be a
+    // grid of plates with everything else deferred to the work page, and it
+    // read as a query interface. The redesign gives every result the full
+    // width of the page with the record on the left and what is actually
+    // known about it on the right, which is where the synopsis and the
+    // themes belong. Both are the work's own fields; neither is derived.
     renderPage({ page: listPage([presentation(ANIME, userState({ rating: 8 }))]) })
 
     await screen.findByText('Cowboy Bebop')
-    expect(screen.queryByText('Bounty hunters in space.')).not.toBeInTheDocument()
-    expect(screen.queryByText('Action')).not.toBeInTheDocument()
+    expect(screen.getByText('Bounty hunters in space.')).toBeInTheDocument()
+    expect(screen.getByText('Synopsis')).toBeInTheDocument()
+  })
+
+  it('lists the themes a work carries, where it carries any', async () => {
+    // `presentation()` builds the product envelope and leaves `concepts`
+    // empty, so the one field under test is set on the result it returns.
+    const entry = presentation(ANIME, null)
+    renderPage({
+      page: listPage([
+        {
+          ...entry,
+          work: {
+            ...entry.work,
+            concepts: [
+              { slug: 'space-travel', name: 'Space Travel', concept_type: 'motif' },
+            ],
+          },
+        },
+      ]),
+    })
+
+    await screen.findByText('Cowboy Bebop')
+    expect(screen.getByText('Themes')).toBeInTheDocument()
+    expect(screen.getByText('Space Travel')).toBeInTheDocument()
+  })
+
+  it('says so when a record carries no synopsis, rather than leaving a gap', async () => {
+    renderPage({
+      page: listPage([presentation({ ...ANIME, description: null }, null)]),
+    })
+
+    await screen.findByText('Cowboy Bebop')
+    expect(
+      screen.getByText('No synopsis was supplied with this record.'),
+    ).toBeInTheDocument()
   })
 
   it('never renders corpus internals', async () => {

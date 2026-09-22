@@ -5,42 +5,86 @@
 /**
  * The Noema visual system.
  *
- * Four colours, and everything else derived from them by mixing. Nothing here
- * is pure black or pure white: the page sits on a deep warm green and rises to
- * parchment, which is what keeps the light band feeling like the same
- * publication rather than a different website.
+ * Two grounds, not one. The page is a deep green canvas; the things on it --
+ * plates, panels, ledgers, the thesis articles -- are set on a much darker
+ * near-black. That material step is the whole visual idea: content reads as
+ * something laid onto a surface rather than as regions of one flat field.
  *
- *     ink       #2C3930   primary dark background
- *     surface   #3F4F44   raised and secondary dark surfaces, and secondary
- *                         text on the light band
- *     paper     #DCD7C9   the warm light surface, and primary text on dark
- *     accent    #A27B5C   active navigation, links, small editorial marks
+ *     canvas  #2c3930   the page ground
+ *     ink     #1d2521   the ground a card, panel or plate sits on
+ *     ivory   #f3f0e9   type, on either
+ *     paper   #efece4   the light editorial surface, for inverted bands
+ *     ember   #d9a05b   accents, marks, rules, the current nav item
  *
- * The four tones between them -- `paper-dim`, `paper-faint`, `ink-soft`,
- * `ink-faint` -- are mixes of those four and introduce no new hue. They exist
- * so secondary and tertiary text has somewhere to go without reaching for grey.
+ * ---
  *
- * `accent` is deliberately scarce. It marks the current nav item, underlines a
- * primary action and heads a plate; beyond that it should be possible to scan
- * a whole section without seeing it.
+ * Why two grounds and not one
  *
- * Names are semantic on purpose. A surface that says `bg-slate-950` has no
- * opinion; one that says `bg-ink` does.
+ * An earlier pass flattened everything to a near-black and the result was a
+ * single unbroken field -- every section the same colour, nothing reading as
+ * a card, the whole composition gone. The pass after it kept the near-black
+ * for the cards, which was the opposite fault: the panels read as holes cut
+ * in the page rather than as material laid on it.
+ *
+ * So the card ground is **the canvas carried toward black, not to it** --
+ * still unmistakably the same green, a step of 1.30:1 below the page. Enough
+ * to see a panel's edge without a border; not enough to look like a
+ * different surface.
+ *
+ * The whole ladder, darkest to lightest, is one hue:
+ *
+ *     ink          #1d2521   a card, panel or plate
+ *     ink-soft     #232c27   a sub-panel inside one
+ *     surface      #27312b   the step above that
+ *     canvas       #2c3930   the page
+ *     canvas-soft  #35423a   a row hovered or striped on the page
+ *
+ * Raised means lighter, so a sub-panel inside a card rises *toward* the
+ * canvas rather than away from it.
+ *
+ * ---
+ *
+ * Contrast, measured rather than judged
+ *
+ * Every rung of the ladder clears AA for every tone. The worst case is the
+ * lightest ground, `canvas-soft`: ivory 9.3:1, paper-dim 5.9:1, paper-faint
+ * 4.3:1, ember 4.6:1. On the card ground each is higher again -- ivory
+ * 13.8:1, ember 6.8:1. On the paper band: ink 16.6:1, ink-faint 5.7:1.
+ *
+ * The secondary tones are chosen against **canvas**, because it is the
+ * lighter of the two dark grounds -- anything legible there is legible on
+ * ink as well, so one set of tones serves both.
+ *
+ * **Ember is 1.95:1 on the paper band and must never carry text there.** On
+ * the light band it is a rule and nothing else; type is `ink` or `ink-faint`.
  */
 @theme {
-  --color-ink: #2c3930;
-  /* ink lifted a third of the way to surface: plate fields, quiet depth. */
-  --color-ink-soft: #35423a;
-  --color-surface: #3f4f44;
+  /* The page ground. */
+  --color-canvas: #2c3930;
+  /* One step up: a hovered or striped row on the green. */
+  --color-canvas-soft: #35423a;
 
-  --color-paper: #dcd7c9;
-  /* paper carried toward ink, for secondary and tertiary text on dark. */
-  --color-paper-dim: #b0afa3;
-  --color-paper-faint: #878b80;
-  /* surface carried toward paper, for tertiary text on the light band. */
-  --color-ink-faint: #6e7a70;
+  /* The ground a card, panel or plate is set on: the canvas, carried down. */
+  --color-ink: #1d2521;
+  /* The two steps above it, for sub-panels inside a card. */
+  --color-ink-soft: #232c27;
+  --color-surface: #27312b;
 
-  --color-accent: #a27b5c;
+  /* Ivory: type, on either dark ground. */
+  --color-paper: #f3f0e9;
+  /* Ivory carried toward the grounds, for secondary and tertiary type. */
+  --color-paper-dim: #c6c2b8;
+  --color-paper-faint: #a9a59c;
+
+  /* Paper: the light editorial surface a section inverts to. */
+  --color-band: #efece4;
+  /* Tertiary type on that band. */
+  --color-ink-faint: #5f5c55;
+
+  /* Ember. */
+  --color-accent: #d9a05b;
+  /* Ember carried up, for emphasis and for the smallest tracked labels. */
+  --color-accent-bright: #ebbe9b;
 
   /* Two faces, two jobs: the serif states things, the sans labels them. */
   --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
@@ -52,6 +96,90 @@
   --container-page: 84rem;
 }
 
+/**
+ * The typographic scale, as named steps rather than as arithmetic at every
+ * call site.
+ *
+ * Taken from the Stitch design system, which specifies size, leading, weight
+ * and tracking together — they are one decision, and splitting them across
+ * four Tailwind classes is how a scale drifts. Each step below is the whole
+ * step.
+ *
+ * The two `display` steps and `headline-lg` carry their own mobile size,
+ * because a 56px headline on a 390px screen is not a smaller headline, it is
+ * a broken one.
+ */
+.type-display {
+  font-family: var(--font-display);
+  font-size: 2.25rem; /* 36px */
+  line-height: 2.75rem;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+}
+.type-headline-lg {
+  font-family: var(--font-display);
+  font-size: 1.75rem; /* 28px */
+  line-height: 2.25rem;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.type-headline-md {
+  font-family: var(--font-display);
+  font-size: 1.625rem; /* 26px */
+  line-height: 2.125rem;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.type-headline-sm {
+  font-family: var(--font-display);
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.75rem;
+  font-weight: 500;
+}
+.type-body-lg {
+  font-size: 1rem;
+  line-height: 1.625rem;
+  letter-spacing: -0.01em;
+}
+.type-body {
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+.type-body-sm {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  letter-spacing: 0.01em;
+}
+/* The editorial label: uppercase, tracked out, the thing this system uses
+   instead of a badge, a pill or a coloured chip. */
+.type-label {
+  font-size: 0.6875rem; /* 11px */
+  line-height: 0.875rem;
+  letter-spacing: var(--tracking-label);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+/* Figures that sit in a column and must line up: dates, counts, folio marks. */
+.type-num {
+  font-size: 0.8125rem;
+  line-height: 1rem;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 768px) {
+  .type-display {
+    font-size: 3.5rem; /* 56px */
+    line-height: 4rem;
+    letter-spacing: -0.02em;
+  }
+  .type-headline-lg {
+    font-size: 2.375rem; /* 38px */
+    line-height: 2.875rem;
+    letter-spacing: -0.015em;
+  }
+}
+
 html,
 body,
 #root {
@@ -59,7 +187,7 @@ body,
 }
 
 body {
-  background-color: var(--color-ink);
+  background-color: var(--color-canvas);
   color: var(--color-paper);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -71,156 +199,45 @@ body {
 }
 
 /**
- * Editorial atmosphere, in CSS only.
+ * Surfaces, flat.
  *
- * The prototype's hero was a photograph behind a scrim. No artwork exists for
- * any work Noema holds, and inventing some is the thing the product refuses --
- * but the composition never needed the image to *depict* anything. It needed
- * depth and warmth behind the type.
+ * These four classes used to be a four-stop radial wash with a vignette, an
+ * SVG turbulence grain and two legibility scrims over it -- an invention of
+ * the previous visual system, which needed atmosphere because it had no
+ * artwork to carry a hero.
  *
- * So this is decorative page furniture: lamplight in `accent`, a cooler pool
- * in `surface`, a vignette and a grain. It depicts nothing and is attached to
- * no work, so there is nothing in it to mistake for a cover.
+ * The editorial system this replaced it with forbids every part of that:
+ * no gradients, no blur, no glow, no shadow. Depth is tonal and structural,
+ * and separation is a hairline or a step in ink. So the classes survive as
+ * flat planes -- every call site keeps working, and what it gets is the
+ * material the design actually specifies.
  */
 .atmosphere {
   position: relative;
   isolation: isolate;
-  background-color: var(--color-ink);
-  background-image:
-    /* The principal light, off-centre and high right -- where the prototype's
-       photograph carried its brightest area. */
-    radial-gradient(64% 86% at 78% 12%, rgb(162 123 92 / 0.26) 0%, rgb(162 123 92 / 0) 58%),
-    /* A cooler pool low and right, so the field has two temperatures. */
-    radial-gradient(52% 64% at 92% 72%, rgb(63 79 68 / 0.8) 0%, rgb(63 79 68 / 0) 62%),
-    /* A broad haze filling the right half -- the space the scrim fades toward.
-       Without it the band ends flat. */
-    radial-gradient(90% 120% at 100% 45%, rgb(162 123 92 / 0.11) 0%, rgb(162 123 92 / 0) 70%),
-    /* Depth at the lower left, so the type column sits on something. */
-    radial-gradient(70% 90% at 8% 100%, rgb(63 79 68 / 0.55) 0%, rgb(63 79 68 / 0) 68%),
-    linear-gradient(172deg, rgb(63 79 68 / 0.45) 0%, rgb(44 57 48 / 1) 72%);
+  background-color: var(--color-canvas);
 }
 
-/* Vignette: pulls the eye back to the type column. */
-.atmosphere::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: radial-gradient(
-    125% 95% at 46% 50%,
-    rgb(44 57 48 / 0) 34%,
-    rgb(44 57 48 / 0.58) 100%
-  );
-}
-
-/**
- * Grain. An SVG turbulence tile, not an image file -- no asset, no request, no
- * external dependency. Enough to give the wash a surface; far short of
- * anything that reads as a picture.
- */
-.grain::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/**
- * The same atmosphere, over the light band.
- *
- * `.atmosphere` is built for type in `paper` on `ink`. The taste band inverts
- * that -- ink on paper -- and dropping the dark wash behind it would either
- * wreck the contrast or turn the section into a different website.
- *
- * So this is the same composition in the same four colours, weighted for a
- * light field: the `accent` lamplight stays high and right where it sits on
- * the dark band, and a `surface` pool cools the lower left so the type column
- * has something to sit on.
- *
- * **The alphas are chosen from a measurement, not by eye.** Composite every
- * layer at full strength over the darkest end of the base gradient -- which
- * the geometry never actually does, since the lamplight peaks top-right and
- * the pool bottom-left -- and the field bottoms out at #c4bdae. On that,
- * `ink` is 6.50:1 and `surface` is 4.67:1, so both clear AA for body text at
- * the worst point the wash can reach. On flat paper they are 8.42 and 6.05.
- *
- * Nothing here is load-bearing. The base colour underneath is `paper`, so a
- * browser that paints no gradient shows the flat light band the section was
- * before, at its original contrast. It depicts nothing, is attached to no
- * work, and adds no asset and no request -- which is what keeps it
- * atmosphere rather than a collage of covers.
- */
+/* The inverted band: a light editorial surface, and ink type on it. */
 .atmosphere-paper {
   position: relative;
   isolation: isolate;
-  background-color: var(--color-paper);
-  background-image:
-    /* Lamplight, high and right -- the dark band's principal light, warmed
-       down to something the paper can hold. */
-    radial-gradient(58% 78% at 82% 8%, rgb(162 123 92 / 0.1) 0%, rgb(162 123 92 / 0) 62%),
-    /* A cooler pool low and left, so the field has two temperatures rather
-       than one tint. */
-    radial-gradient(64% 72% at 6% 96%, rgb(63 79 68 / 0.06) 0%, rgb(63 79 68 / 0) 66%),
-    /* A broad haze along the right edge, so the band does not end flat. */
-    radial-gradient(84% 110% at 104% 52%, rgb(63 79 68 / 0.04) 0%, rgb(63 79 68 / 0) 72%),
-    linear-gradient(168deg, rgb(220 215 201 / 1) 0%, rgb(216 210 196 / 1) 100%);
+  background-color: var(--color-band);
 }
 
-/* The counterpart of `.atmosphere::before`: a soft lift over the type column
-   rather than a vignette, since darkening the corners of a light field reads
-   as dirt. It only ever moves the field back toward paper. */
-.atmosphere-paper::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: radial-gradient(
-    120% 90% at 26% 40%,
-    rgb(220 215 201 / 0.7) 0%,
-    rgb(220 215 201 / 0.18) 54%,
-    rgb(220 215 201 / 0) 100%
-  );
-}
-
-/* Grain, far lighter than the dark band's and multiplied rather than
-   overlaid: at 0.05 over paper it reads as dirt rather than as tooth. */
-.grain-paper::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.025;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/**
- * Legibility scrims. They sit between the atmosphere and the text column so
- * the type keeps its contrast at every width.
+/*
+ * Kept as no-ops rather than deleted.
+ *
+ * `grain`, `grain-paper`, `scrim-left` and `scrim-bottom` are applied
+ * alongside the two above at several call sites. Emptying them here removes
+ * the effect everywhere at once, which is the point; removing the classes
+ * would mean touching every page to say the same thing.
  */
-.scrim-left {
-  background: linear-gradient(
-    90deg,
-    rgb(44 57 48 / 0.96) 0%,
-    rgb(44 57 48 / 0.7) 38%,
-    rgb(44 57 48 / 0.08) 78%,
-    rgb(44 57 48 / 0) 100%
-  );
-}
+.grain,
+.grain-paper,
+.scrim-left,
 .scrim-bottom {
-  background: linear-gradient(
-    0deg,
-    rgb(44 57 48 / 0.92) 0%,
-    rgb(44 57 48 / 0.35) 45%,
-    rgb(44 57 48 / 0) 100%
-  );
+  background-image: none;
 }
 
 /* Horizontal shelves scroll on narrow screens without a visible scrollbar;

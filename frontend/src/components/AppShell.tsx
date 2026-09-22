@@ -1,46 +1,42 @@
-import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSession } from '../auth/session'
 
 /**
  * The chrome every product page shares.
  *
- * Phase 1Y established it; the Magic Patterns editorial direction restyled it.
- * The structure is the prototype's -- sticky masthead on `bg-ink/85` with a
- * backdrop blur, wordmark with an accent dot, four destinations, a search
- * affordance, and a full-screen drawer below the medium breakpoint.
- *
- * Adapted rather than copied in three places. The prototype's nav was
- * `<a href="#discover">` anchors; Noema navigates by view state, so these are
- * buttons calling `onNavigate`. The prototype animated the drawer with
- * framer-motion and drew icons with lucide-react; neither is a dependency
- * here, so the drawer is a plain disclosure with a CSS transition and the
- * glyphs are characters. The prototype showed reader initials in an avatar
- * circle, which needs a display name Noema does not have -- the `actions`
- * slot carries the email instead.
- *
- * No router. There are five destinations, no nested routes, and nothing here
- * is URL-addressable in a way the product promises to keep stable. Shareable
- * work links are the thing that would change that.
- *
- * The wordmark is a button rather than a heading, so each page's own `<h1>`
- * stays the only level-1 heading on it.
+ * The Stitch editorial redesign made the masthead a *register head* rather
+ * than an app bar: wordmark and folio on the left, four destinations set as
+ * tracked uppercase labels, and the session's own state on the right. Active
+ * navigation is marked by a single accent rule under the label — no pill, no
+ * fill, no rounded anything.
  *
  * ---
  *
- * The account lives here, not on the pages
+ * Three things this deliberately does differently from the export
  *
- * Home, the Library and Your Taste each used to render their own account
- * line and their own Log out, and Discover and the work page rendered
- * neither -- so whether a reader could sign out depended on which page they
- * happened to be reading. It is one affordance about the session rather than
- * about any page, so the shell owns it and every page gets it for free. The
- * `actions` slot stays for genuinely page-specific controls, which is now
- * only the work page's Back.
+ * **The nav is one landmark at every width.** The Stitch export ships two
+ * copies of the navigation, one for desktop and one for a mobile strip. Two
+ * elements both called "Main" is an ambiguous landmark for a screen reader
+ * and an ambiguous query for a test. This is one `<nav>` that wraps onto its
+ * own line below the medium breakpoint, which is the same composition with
+ * one element.
  *
- * Only signing out lives here. Signing *in* is already offered by every
- * surface that needs an account, and a header "Log in" beside those would be
- * a second control for the same thing.
+ * **The drawer is gone.** It existed to hide four items behind a hamburger;
+ * four tracked labels fit on a 390px line, so they are simply there. One less
+ * piece of state, one less thing to trap focus in.
+ *
+ * **"ARCHIVIST" is the account.** The export shows a live dot beside a role
+ * Noema does not have. The dot stays — it genuinely means "there is a session"
+ * — and the words beside it are the reader's own address.
+ *
+ * Labels are uppercased in CSS rather than in the markup, so the accessible
+ * name of the Home button is "Home" and not "HOME".
+ *
+ * No router here. The shell navigates by calling `onNavigate`; `App` owns the
+ * route table.
+ *
+ * The wordmark is a button rather than a heading, so each page's own `<h1>`
+ * stays the only level-1 heading on it.
  */
 
 export type ProductView =
@@ -69,11 +65,23 @@ interface AppShellProps {
   title: string
   subtitle?: string
   /**
-   * An editorial opening that replaces the default title block. The page
-   * supplies its own `<h1>` when it uses this; Home does, so its masthead can
-   * set type at a scale a shared header has no business deciding.
+   * The small tracked line above the title: what kind of document this page
+   * is. "Archival folio // registry no. 0084-lib" in the export; here it is
+   * whatever the page can truthfully say about itself.
+   */
+  eyebrow?: string
+  /**
+   * The right-hand column of the masthead — a census, a count, a state. Only
+   * ever real figures the page already has.
+   */
+  register?: ReactNode
+  /**
+   * An editorial opening that replaces the default masthead entirely. Home
+   * uses it to set type at a scale a shared header has no business deciding.
    */
   masthead?: ReactNode
+  /** A thin registry strip between the header and the masthead. */
+  folio?: ReactNode
   /** Which nav item is the current page, or null on a page under one. */
   current: ProductView | null
   onNavigate: (view: ProductView) => void
@@ -87,59 +95,55 @@ interface AppShellProps {
 export default function AppShell({
   title,
   subtitle,
+  eyebrow,
+  register,
   masthead,
+  folio,
   current,
   onNavigate,
   actions,
   bleed = false,
   children,
 }: AppShellProps) {
-  const [open, setOpen] = useState(false)
   const session = useSession()
 
-  // Escape closes the drawer, as a dialog-like overlay should.
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
-
-  const go = (view: ProductView) => {
-    setOpen(false)
-    onNavigate(view)
-  }
-
   return (
-    <div className="min-h-screen bg-ink font-sans text-paper">
-      <header className="sticky top-0 z-50 border-b border-paper/10 bg-ink/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-page items-center gap-8 px-5 sm:px-6 md:h-20 lg:px-10">
+    <div className="min-h-screen bg-canvas font-sans text-paper">
+      <header className="sticky top-0 z-50 border-b border-paper/10 bg-canvas/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-page flex-wrap items-center gap-x-8 gap-y-3 px-5 py-3 sm:px-6 md:py-0 lg:px-10">
           <button
             type="button"
-            onClick={() => go('home')}
-            className="group flex shrink-0 items-baseline gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            onClick={() => onNavigate('home')}
+            className="flex shrink-0 flex-col items-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper md:h-20 md:justify-center"
           >
-            <span className="font-display text-2xl font-light leading-none tracking-tight text-paper">
+            <span className="font-display text-xl font-light leading-none tracking-tight text-paper">
               Noema
             </span>
-            <span aria-hidden="true" className="hidden h-1 w-1 rounded-full bg-accent sm:block" />
+            <span aria-hidden="true" className="type-label mt-1 text-paper-faint">
+              Archive // 01
+            </span>
           </button>
 
-          <nav aria-label="Main" className="hidden md:block">
-            <ul className="flex items-center gap-7">
+          {/*
+            `order-last w-full` below md puts the navigation on its own line
+            without a second copy of it in the DOM.
+          */}
+          <nav
+            aria-label="Main"
+            className="order-last w-full border-t border-paper/10 pt-3 md:order-none md:w-auto md:border-t-0 md:pt-0"
+          >
+            <ul className="flex items-center gap-5 sm:gap-7">
               {NAV.map((item) => {
                 const active = item.view === current
                 return (
                   <li key={item.view}>
                     <button
                       type="button"
-                      onClick={() => go(item.view)}
+                      onClick={() => onNavigate(item.view)}
                       // Marked for assistive technology as well as visually,
                       // so the current page never rests on colour alone.
                       aria-current={active ? 'page' : undefined}
-                      className={`relative py-1 text-[0.8rem] tracking-wide transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                      className={`type-label relative py-1 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper md:py-6 ${
                         active ? 'text-paper' : 'text-paper-dim hover:text-paper'
                       }`}
                     >
@@ -147,7 +151,7 @@ export default function AppShell({
                       {active && (
                         <span
                           aria-hidden="true"
-                          className="absolute -bottom-1 left-0 h-px w-full bg-accent"
+                          className="absolute bottom-0 left-0 h-px w-full bg-accent-bright"
                         />
                       )}
                     </button>
@@ -157,107 +161,64 @@ export default function AppShell({
             </ul>
           </nav>
 
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-4 md:h-20">
             {/* Search lives on Discover; this is the way in from anywhere. */}
             <button
               type="button"
-              onClick={() => go('discover')}
-              className="hidden items-center gap-2 text-[0.78rem] text-paper-dim transition-colors duration-200 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:flex"
+              onClick={() => onNavigate('discover')}
+              className="type-label hidden text-paper-dim transition-colors duration-150 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper sm:block"
             >
-              <span aria-hidden="true" className="text-[0.95rem] leading-none">
-                &#9906;
-              </span>
               Search the catalogue
             </button>
 
             {actions}
 
-            {session.account ? (
+            {session.account && (
               <>
-                <p className="hidden text-[0.72rem] text-paper-faint lg:block">
-                  {session.account}
+                <p className="hidden items-center gap-2 border-l border-paper/10 pl-4 lg:flex">
+                  <span aria-hidden="true" className="h-1.5 w-1.5 bg-accent-bright" />
+                  <span className="type-label text-paper-dim normal-case tracking-normal">
+                    {session.account}
+                  </span>
                 </p>
                 <button
                   type="button"
                   onClick={() => void session.signOut()}
-                  className="border-b border-paper/20 pb-0.5 text-[0.78rem] text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="type-label border-b border-paper/20 pb-0.5 text-paper-dim transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
                 >
                   Log out
                 </button>
               </>
-            ) : (
-              // Nothing for an anonymous reader. Every surface that needs an
-              // account already offers its own way in -- Home's sign-in
-              // section, `SignInPrompt` on the Library, Your Taste and the
-              // work page -- and a second "Log in" in the header would be a
-              // duplicate control, not a missing one. The gap this block
-              // exists to close was signing *out*.
-              null
             )}
-
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              aria-expanded={open}
-              className="text-paper md:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              <span aria-hidden="true" className="text-xl leading-none">
-                &#9776;
-              </span>
-              <span className="sr-only">Open navigation</span>
-            </button>
           </div>
         </div>
       </header>
 
-      {open && (
-        <div className="fixed inset-0 z-50 bg-ink md:hidden">
-          <div className="flex h-16 items-center justify-between px-5 sm:px-6">
-            <span className="font-display text-2xl font-light text-paper">Noema</span>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              <span aria-hidden="true" className="text-xl leading-none">
-                &times;
-              </span>
-              <span className="sr-only">Close navigation</span>
-            </button>
-          </div>
-          {/*
-            A distinct accessible name, so the one landmark called "Main"
-            stays unambiguous while the drawer is open.
-          */}
-          <nav aria-label="Main menu" className="px-5 pt-6 sm:px-6">
-            <ul className="flex flex-col">
-              {NAV.map((item) => (
-                <li key={item.view} className="border-b border-paper/10">
-                  <button
-                    type="button"
-                    onClick={() => go(item.view)}
-                    aria-current={item.view === current ? 'page' : undefined}
-                    className="block w-full py-5 text-left font-display text-3xl font-light text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    {item.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-      )}
+      {folio}
 
       {masthead ?? (
         <div className="border-b border-paper/10">
-          <div className="mx-auto max-w-page px-5 py-10 sm:px-6 lg:px-10">
-            <h1 className="font-display text-[2.1rem] font-light leading-[1.05] tracking-tight text-paper md:text-5xl">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="mt-4 max-w-xl font-display text-lg font-light leading-relaxed text-paper-dim">
-                {subtitle}
-              </p>
+          <div className="mx-auto grid max-w-page gap-x-10 gap-y-6 px-5 py-10 sm:px-6 md:grid-cols-12 md:items-end lg:px-10">
+            <div className="md:col-span-8">
+              {eyebrow && (
+                <p className="type-label mb-4 flex items-center gap-2 text-paper-faint">
+                  <span aria-hidden="true" className="h-1.5 w-1.5 bg-accent" />
+                  {eyebrow}
+                </p>
+              )}
+              <h1 className="type-headline-lg text-paper md:text-[2.75rem] md:leading-[1.08]">
+                {title}
+              </h1>
+              {subtitle && (
+                <p className="mt-4 max-w-2xl font-display text-lg font-light leading-relaxed text-paper-dim">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+            {register && (
+              <div className="border-t border-paper/10 pt-4 md:col-span-4 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+                {register}
+              </div>
             )}
           </div>
         </div>

@@ -14,7 +14,7 @@ import {
 } from '../api/library'
 import { useSession } from '../auth/session'
 import { relationshipDates } from '../lib/dates'
-import { completionCount, statusLabel } from '../lib/labels'
+import { activityLine, completionCount, statusLabel } from '../lib/labels'
 import type {
   LibraryPage,
   LibraryStatus,
@@ -142,20 +142,28 @@ interface LibraryProps {
   onOpenWork: (workId: string) => void
 }
 
-/** Creator, medium and year -- the caption, never the whole record. */
-function workLine(entry: WorkPresentation): string {
-  const { work } = entry
-  return [work.creators[0]?.name, work.domain.name, work.media_format, work.year]
-    .filter(Boolean)
-    .join(' · ')
-}
-
 /**
- * One entry: the work on the left, the reader's relationship on the right.
+ * One line of the archive: the work, what the reader made of it, and the two
+ * controls that change it.
  *
- * The two halves are separated by a rule -- horizontal when stacked, vertical
- * from `lg` -- because nothing canonical may read as something the reader did,
- * and nothing the reader did may read as a property of the work.
+ * The Stitch redesign turned the library into a ruled ledger, and this is that
+ * row. It shares its grammar with `WorkLedgerRow` -- same hairline base, same
+ * twelve-column split, same label-over-value cells -- but not its code: this
+ * row carries a status select and a remove control inline, and threading two
+ * live controls through a display component's slot would make that component
+ * about the Library rather than about ledgers.
+ *
+ * The canonical/personal boundary survives the change of shape. Columns one
+ * and two are the work and are identical for every reader; columns three to
+ * five are this reader's alone and are headed as such, so nothing canonical
+ * can read as something they did and nothing they did can read as a property
+ * of the work.
+ *
+ * **There is no progress column.** The export shows `Episode 14 of 22` over a
+ * filled bar here; Noema stores neither the position nor the total for any
+ * work in the catalogue, so the column carries what is actually recorded --
+ * status, rating, completions, dates -- and will carry progress when there is
+ * progress to carry. See `WorkLedgerRow` for the full note.
  */
 function Row({
   entry,
@@ -174,27 +182,42 @@ function Row({
 }) {
   const { work, user_state: state } = entry
   const removed = Boolean(state && !state.in_library)
+  const credited = work.creators
+    .slice(0, 2)
+    .map((creator) => creator.name)
+    .join(', ')
 
   return (
-    <article className="grid gap-6 py-8 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-12">
-      {/* --- the work ------------------------------------------------- */}
-      <div className="flex min-w-0 items-start gap-5">
+    <article
+      className={`grid gap-x-6 gap-y-5 px-1 py-6 transition-colors duration-150 hover:bg-canvas-soft md:grid-cols-12 md:px-4 ${
+        removed ? 'opacity-60' : ''
+      }`}
+    >
+      {/* --- medium ------------------------------------------------------ */}
+      <div className="md:col-span-2">
+        <p className="type-label text-accent-bright">{work.domain.name}</p>
+        <p className="type-num mt-1 text-paper-faint">
+          {[work.media_format, work.year].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+
+      {/* --- the work ---------------------------------------------------- */}
+      <div className="flex min-w-0 items-start gap-4 md:col-span-4">
         <button
           type="button"
           onClick={() => onOpenWork(work.id)}
           aria-label={`${work.title} — open this work`}
-          className="w-16 shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-[4.5rem]"
+          className="w-12 shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper sm:w-14"
         >
           {work.cover_image_url ? (
             <WorkPlate work={work} />
           ) : (
             /*
-              `WorkPlate`'s fallback sets the title across a 2:3 poster. At
+              `WorkPlate`'s fallback sets the title across a 2:3 plate. At
               thumbnail width that title is both unreadable and a second copy
               of the one printed beside it, so a work with no artwork gets a
-              plain tinted slot instead. The title is immediately to its
-              right, which is why this carries nothing and is hidden from
-              assistive technology.
+              plain tinted slot. Hidden from assistive technology, because the
+              title is immediately to its right.
             */
             <div
               aria-hidden="true"
@@ -207,122 +230,128 @@ function Row({
           <button
             type="button"
             onClick={() => onOpenWork(work.id)}
-            className="block text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="block text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
           >
-            <h3 className="font-display text-xl font-light leading-snug text-paper transition-colors duration-200 hover:text-accent">
+            <h3 className="font-display text-lg font-light leading-snug text-paper transition-colors duration-150 hover:text-accent-bright">
               {work.title}
             </h3>
           </button>
           {work.original_title && work.original_title !== work.title && (
-            <p className="mt-1 font-display text-[0.95rem] font-light text-paper-faint">
+            <p className="mt-1 font-display text-[0.95rem] font-light italic text-paper-faint">
               {work.original_title}
             </p>
           )}
-          <p className="mt-2 text-[0.62rem] uppercase tracking-label text-paper-faint">
-            {workLine(entry)}
-          </p>
+          {credited && <p className="type-body-sm mt-1 text-paper-faint">{credited}</p>}
         </div>
       </div>
 
-      {/* --- this reader's relationship with it ------------------------ */}
-      <div className="border-t border-paper/10 pt-5 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+      {/* --- this reader's relationship with it -------------------------- */}
+      <div className="border-t border-paper/10 pt-4 md:col-span-3 md:border-l md:border-t-0 md:pl-6 md:pt-0">
         {/*
           Named, not merely placed. The rule and the column carry the
-          separation visually; this says out loud which half is the reader's,
-          so nothing here can be mistaken for a property of the work.
+          separation visually; this says out loud which half is the reader's.
         */}
-        <p className="text-[0.62rem] uppercase tracking-label text-paper-faint">
-          Your relationship
-        </p>
-
+        {/*
+          Hidden from the medium breakpoint up, where the column head above
+          already says it. Below that the rows stack and each cell has to
+          carry its own label, which is the only reason this exists twice.
+        */}
+        <p className="type-label text-paper-faint md:hidden">Your relationship</p>
         {state && (
           <>
-            <p className="mt-3 font-display text-lg font-light text-paper">
-              {removed ? 'Removed' : statusLabel(state.status)}
-              {state.rating !== null ? (
-                <span className="text-paper-dim"> · rated {state.rating}/10</span>
-              ) : (
-                <span className="text-paper-faint"> · not rated</span>
-              )}
+            <p className="type-body mt-2 text-paper">
+              {removed ? 'Removed' : activityLine(state, work.domain.slug)}
             </p>
-
-            {state.times_completed > 1 && (
-              <p className="mt-2 text-[0.8rem] text-paper-dim">
+            {!removed && state.times_completed > 1 && (
+              <p className="type-body-sm mt-1 text-paper-dim">
                 {completionCount(state.times_completed, work.domain.slug)}
               </p>
             )}
-
-            <p className="mt-2 text-[0.62rem] uppercase tracking-label text-paper-faint">
+            <p className="type-num mt-2 text-paper-faint">
               {relationshipDates(state)
                 .map((date) => `${date.label} ${date.formatted}`)
                 .join(' · ')}
             </p>
-
             {removed && (
-              <p className="mt-3 max-w-xs text-[0.8rem] leading-relaxed text-paper-faint">
+              <p className="type-body-sm mt-2 max-w-xs text-paper-faint">
                 Your rating and history were kept. Adding it back restores them.
               </p>
             )}
           </>
         )}
+      </div>
 
-        {/* --- actions ------------------------------------------------ */}
-        <div className="mt-5 flex flex-wrap items-end gap-x-8 gap-y-4">
-          {removed ? (
-            // The only action the server accepts on a removed entry.
-            // `add_to_library` revives this row rather than making a new one.
+      {/* --- what they made of it ---------------------------------------- */}
+      <div className="md:col-span-1">
+        <p className="type-label text-paper-faint md:hidden">Rated</p>
+        {state?.rating != null ? (
+          <p className="mt-2 font-display text-2xl font-light tabular-nums leading-none text-paper">
+            {state.rating}
+            <span className="type-num text-paper-faint"> / 10</span>
+          </p>
+        ) : (
+          // Unrated is not a low rating, and an em dash in a numeric column
+          // reads as one. Said in words instead.
+          <p className="type-body-sm mt-2 text-paper-faint">Not rated</p>
+        )}
+      </div>
+
+      {/* --- the two things they can change ------------------------------ */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-paper/10 pt-4 md:col-span-2 md:border-t-0 md:pt-0">
+        {removed ? (
+          // The only action the server accepts on a removed entry.
+          // `add_to_library` revives this row rather than making a new one.
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRestore(work.id)}
+            aria-label={`Add ${work.title} back to your library`}
+            className="type-label border border-accent-bright/50 px-3 py-2 text-paper transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper disabled:opacity-50"
+          >
+            Add back to your library
+          </button>
+        ) : (
+          <>
+            <div className="w-full">
+              <label
+                htmlFor={`status-${work.id}`}
+                className="type-label block text-paper-faint"
+              >
+                Status
+              </label>
+              <select
+                id={`status-${work.id}`}
+                value={state?.status ?? 'planned'}
+                disabled={busy}
+                aria-label={`Status for ${work.title}`}
+                onChange={(event) =>
+                  onStatus(work.id, event.target.value as LibraryStatus)
+                }
+                className="type-body mt-2 w-full min-w-[9rem] appearance-none border border-paper/20 bg-transparent px-2 py-1.5 text-paper transition-colors duration-150 hover:border-paper/40 focus:border-accent-bright focus-visible:outline-none disabled:opacity-50"
+              >
+                {GROUPS.map((group) => (
+                  <option
+                    key={group.status}
+                    value={group.status}
+                    className="bg-ink text-paper"
+                  >
+                    {statusLabel(group.status)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
               type="button"
               disabled={busy}
-              onClick={() => onRestore(work.id)}
-              aria-label={`Add ${work.title} back to your library`}
-              className="border-b border-accent pb-1 text-[0.8rem] text-paper transition-colors duration-200 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+              onClick={() => onRemove(work.id)}
+              aria-label={`Remove ${work.title} from your library`}
+              className="type-label border-b border-paper/20 pb-0.5 text-paper-dim transition-colors duration-150 hover:border-accent-bright hover:text-accent-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper disabled:opacity-50"
             >
-              Add back to your library
+              Remove
             </button>
-          ) : (
-            <>
-              <div>
-                <label
-                  htmlFor={`status-${work.id}`}
-                  className="block text-[0.62rem] uppercase tracking-label text-paper-faint"
-                >
-                  Status
-                </label>
-                <select
-                  id={`status-${work.id}`}
-                  value={state?.status ?? 'planned'}
-                  disabled={busy}
-                  aria-label={`Status for ${work.title}`}
-                  onChange={(event) =>
-                    onStatus(work.id, event.target.value as LibraryStatus)
-                  }
-                  className="mt-2 w-44 appearance-none border-b border-paper/20 bg-transparent py-1.5 pr-6 text-[0.85rem] text-paper transition-colors duration-200 hover:border-paper/40 focus:border-accent focus-visible:outline-none disabled:opacity-50"
-                >
-                  {GROUPS.map((group) => (
-                    <option
-                      key={group.status}
-                      value={group.status}
-                      className="bg-ink text-paper"
-                    >
-                      {statusLabel(group.status)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onRemove(work.id)}
-                aria-label={`Remove ${work.title} from your library`}
-                className="border-b border-paper/20 pb-1 text-[0.8rem] text-paper-dim transition-colors duration-200 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
-              >
-                Remove
-              </button>
-            </>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </article>
   )
@@ -336,19 +365,34 @@ interface RowActions {
   onRestore: (workId: string) => void
 }
 
-/** A list of entries, divided by hairlines rather than boxed into cards. */
+/**
+ * A list of entries, ruled rather than boxed.
+ *
+ * The column heads are hidden below the medium breakpoint, where the rows
+ * stack and each cell carries its own label instead -- a header row over
+ * stacked blocks labels nothing.
+ */
 function Rows({
   entries,
   ...actions
 }: { entries: WorkPresentation[] } & RowActions) {
   return (
-    <ul className="divide-y divide-paper/10 border-t border-paper/10">
-      {entries.map((entry) => (
-        <li key={entry.work.id}>
-          <Row entry={entry} {...actions} />
-        </li>
-      ))}
-    </ul>
+    <>
+      <div className="hidden border-b border-paper/20 px-4 pb-2 md:grid md:grid-cols-12 md:gap-x-6">
+        <p className="type-label col-span-2 text-paper-faint">Medium</p>
+        <p className="type-label col-span-4 text-paper-faint">Work &amp; creator</p>
+        <p className="type-label col-span-3 text-paper-faint">Your relationship</p>
+        <p className="type-label col-span-1 text-paper-faint">Rated</p>
+        <p className="type-label col-span-2 text-paper-faint">Actions</p>
+      </div>
+      <ul className="divide-y divide-paper/10">
+        {entries.map((entry) => (
+          <li key={entry.work.id}>
+            <Row entry={entry} {...actions} />
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 
@@ -491,29 +535,34 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
       current="library"
       onNavigate={onNavigate}
       bleed
-      masthead={
-        <div className="border-b border-paper/10">
-          <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
-            <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-              Your record
-            </p>
-            <h1 className="mt-5 font-display text-[2.6rem] font-light leading-[1.05] tracking-tight text-paper sm:text-5xl lg:text-[3.6rem]">
-              Library
-            </h1>
-            <p className="mt-6 max-w-xl font-display text-lg font-light leading-relaxed text-paper-dim md:text-xl">
-              What you have read and watched, and what you made of it.
-            </p>
-            {summary && summary.total > 0 && (
-              <p className="mt-8 text-[0.66rem] uppercase tracking-label text-paper-faint">
-                {summary.total} {summary.total === 1 ? 'work' : 'works'} ·{' '}
-                {summary.rated} rated
-              </p>
-            )}
-          </div>
-        </div>
+      eyebrow="Your record"
+      subtitle="What you have read and watched, and what you made of it."
+      /*
+        The export's "LEDGER CENSUS". Three counts, all of them read from
+        `/library/summary` and all of them answering a question a reader
+        actually has about their own shelf -- how much is here, how much have
+        I judged, how much is open. Nothing derived, nothing scored.
+      */
+      register={
+        summary && summary.total > 0 ? (
+          <dl className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Works', value: summary.total },
+              { label: 'Rated', value: summary.rated },
+              { label: 'Open', value: count('in_progress') },
+            ].map((entry) => (
+              <div key={entry.label}>
+                <dt className="type-label text-paper-faint">{entry.label}</dt>
+                <dd className="mt-2 font-display text-3xl font-light tabular-nums text-paper">
+                  {entry.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : undefined
       }
     >
-      <div className="mx-auto max-w-page px-5 py-12 sm:px-6 md:py-16 lg:px-10">
+      <div className="mx-auto max-w-page px-5 py-7 sm:px-6 md:py-9 lg:px-10">
         {(session.error || error) && (
           <StateMessage
             kind="error"
@@ -535,7 +584,7 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
             <div
               role="tablist"
               aria-label="Library status"
-              className="flex flex-wrap gap-x-8 gap-y-3 border-b border-paper/10 pb-4"
+              className="flex flex-wrap gap-x-8 gap-y-4 border-b border-paper/10"
             >
               {TABS.map((item) => {
                 const active = tab === item.value
@@ -548,17 +597,22 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
                     role="tab"
                     aria-selected={active}
                     onClick={() => switchTab(item.value)}
-                    className={`relative pb-2 text-[0.66rem] uppercase tracking-label transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                      active ? 'text-paper' : 'text-paper-faint hover:text-paper-dim'
+                    /*
+                      The rule is a border on the button rather than an
+                      absolutely-positioned span at a fixed offset. The tabs
+                      wrap onto three lines at 390px, and an offset measured
+                      from the single-row layout drew the active rule straight
+                      through the labels on the row below it.
+                    */
+                    className={`type-label border-b-2 pb-2 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper ${
+                      active
+                        ? 'border-accent-bright text-paper'
+                        : 'border-transparent text-paper-faint hover:text-paper-dim'
                     }`}
                   >
                     {item.label}
-                    {summary && <span className="ml-2 text-paper-faint">{n}</span>}
-                    {active && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute -bottom-[1.05rem] left-0 h-px w-full bg-accent"
-                      />
+                    {summary && (
+                      <span className="type-num ml-2 text-paper-faint">{n}</span>
                     )}
                   </button>
                 )
@@ -649,50 +703,47 @@ export default function Library({ onNavigate, onOpenWork }: LibraryProps) {
               </div>
             )}
 
-            {/* --- grouped view ------------------------------------------- */}
+            {/* --- the whole archive, as one ledger ---------------------- */}
             {shown?.tab === 'all' && !nothingHeld && (
-              <div className="space-y-16 pt-14">
-                {GROUPS.map((group) => {
-                  const groupPage = shown.groups[group.status]
-                  const rows = groupPage?.items ?? []
-                  const groupTotal = groupPage?.total ?? 0
-                  const more = groupTotal > rows.length
+              /*
+                One ledger, not five stacked sections.
 
-                  return (
-                    <section key={group.status} aria-labelledby={`group-${group.status}`}>
-                      <SectionHeading
-                        id={`group-${group.status}`}
-                        label={`${groupTotal} ${groupTotal === 1 ? 'work' : 'works'}`}
-                        title={group.heading}
-                        // Only offered when there is genuinely more behind
-                        // it, and it goes to the tab that pages properly.
-                        action={
-                          more
-                            ? { label: 'See all', onClick: () => switchTab(group.status) }
-                            : undefined
-                        }
-                      />
+                This used to render a headed block per status with its own
+                count and its own empty sentence, which meant a reader whose
+                library was all completed scrolled past four large empty
+                blocks to reach it. The export's archive is a single ruled
+                register that the tabs above filter; status is a column on
+                every row, so grouping by it was saying the same thing twice
+                and spending a screen to do it.
 
-                      <div className="mt-8">
-                        {rows.length === 0 ? (
-                          // A group with nothing in it is not a broken page.
-                          <p className="text-[0.88rem] text-paper-faint">{group.empty}</p>
-                        ) : (
-                          <>
-                            <Rows entries={rows} {...actions} />
-                            {more && (
-                              // Said outright, so the count above can never
-                              // read as a description of what is on screen.
-                              <p className="mt-5 text-[0.62rem] uppercase tracking-label text-paper-faint">
-                                Showing {rows.length} of {groupTotal}
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </section>
+                The counts the group heads carried are not lost -- they are on
+                the tabs, which is where a reader looks for them, and a status
+                with nothing in it now shows as a zero rather than as a block.
+              */
+              <div className="pt-10">
+                <Rows
+                  entries={GROUPS.flatMap((group) => shown.groups[group.status]?.items ?? [])}
+                  {...actions}
+                />
+                {(() => {
+                  const shownCount = GROUPS.reduce(
+                    (sum, group) => sum + (shown.groups[group.status]?.items.length ?? 0),
+                    0,
                   )
-                })}
+                  const heldTotal = GROUPS.reduce(
+                    (sum, group) => sum + (shown.groups[group.status]?.total ?? 0),
+                    0,
+                  )
+                  if (heldTotal <= shownCount) return null
+                  // Said outright, so the tab counts can never read as a
+                  // description of what is actually on screen.
+                  return (
+                    <p className="type-label mt-6 text-paper-faint">
+                      Showing {shownCount} of {heldTotal} — open a status above to page
+                      through all of it
+                    </p>
+                  )
+                })()}
               </div>
             )}
 

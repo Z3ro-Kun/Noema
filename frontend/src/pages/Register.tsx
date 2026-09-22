@@ -79,7 +79,9 @@ export default function Register({ onAuthenticated, onLogin, onHome }: RegisterP
   return (
     <AuthLayout
       title="Create an account"
-      standfirst="An account keeps your library and builds your taste profile. Browsing needs neither."
+      index="02"
+      eyebrow="Reader access // new record"
+      standfirst="An account keeps your library and builds your taste profile."
       onHome={onHome}
       footer={
         <>

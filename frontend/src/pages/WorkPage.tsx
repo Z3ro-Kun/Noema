@@ -3,6 +3,7 @@ import AppShell from '../components/AppShell'
 import type { ProductView } from '../components/AppShell'
 import RatingControl from '../components/RatingControl'
 import LabelList from '../components/LabelList'
+import { FolioBar, SectionMarker } from '../components/Editorial'
 import SignInPrompt from '../components/SignInPrompt'
 import StateMessage from '../components/StateMessage'
 import StatusControl from '../components/StatusControl'
@@ -197,68 +198,99 @@ export default function WorkPage({
           Back
         </button>
       }
+      folio={
+        work ? (
+          /*
+            The registry strip the export runs under every dossier. Everything
+            on it is a fact the record already carries -- the medium, where
+            the record came from, and whether this reader holds it. No
+            invented reference numbers, no "REV. 04.88", no preservation
+            state: the export's are set dressing, and Noema has real fields
+            that do the same job.
+          */
+          <FolioBar
+            left={
+              <>
+                <span className="type-label text-accent-bright">{work.domain.name}</span>
+                {work.source && (
+                  <span className="type-num text-paper-faint">
+                    Record from {work.source}
+                  </span>
+                )}
+              </>
+            }
+            right={
+              state?.in_library ? (
+                <span className="type-label text-paper-dim">In your library</span>
+              ) : (
+                <span className="type-label text-paper-faint">Not in your library</span>
+              )
+            }
+          />
+        ) : undefined
+      }
       masthead={
         work ? (
           /* --- the work ------------------------------------------------ */
           <header className="border-b border-paper/10">
-            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
-              <div className="grid gap-10 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-16">
-                <div className="w-44 sm:w-56 lg:w-full">
-                  <WorkPlate work={work} priority />
-                </div>
+            {/*
+              A compact dossier head.
 
-                <div className="min-w-0">
-                  <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-                    {[work.domain.name, work.media_format, work.year]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
+              It used to spend a full screen on four facts: a type line, a
+              56px title, an original title, then a four-cell grid of
+              label-over-value blocks, each with its own vertical run. The
+              information was never the problem -- the allocation was.
 
-                  <h1 className="mt-5 font-display text-[2.4rem] font-light leading-[1.05] tracking-tight text-paper sm:text-5xl lg:text-[3.4rem]">
-                    {work.title}
-                  </h1>
-
-                  {work.original_title && work.original_title !== work.title && (
-                    <p className="mt-3 font-display text-xl font-light italic text-paper-dim">
-                      {work.original_title}
-                    </p>
-                  )}
-
-                  <p className="mt-6 text-[0.66rem] uppercase tracking-label text-paper-faint">
-                    {work.creators.length > 0
-                      ? creditLine(work.creators)
-                      : 'No credits recorded'}
-                  </p>
-
-                  {/*
-                    The largest body text in the product, and the reason the
-                    other two surfaces no longer carry a synopsis at all.
-                  */}
-                  <section
-                    aria-labelledby="synopsis-heading"
-                    className="mt-9 border-t border-paper/10 pt-9"
-                  >
-                    {/*
-                      No visible label: the synopsis is the subject of the
-                      page, and captioning it "Synopsis" would be chrome. The
-                      region is still named for assistive technology.
-                    */}
-                    <h2 id="synopsis-heading" className="sr-only">
-                      Synopsis
-                    </h2>
-                    {work.synopsis ? (
-                      <p className="max-w-2xl font-display text-lg font-light leading-relaxed text-paper/85 md:text-xl">
-                        {work.synopsis}
-                      </p>
-                    ) : (
-                      <p className="max-w-2xl font-display text-lg font-light italic leading-relaxed text-paper-faint">
-                        No synopsis available. The source that supplied this record
-                        did not include one.
-                      </p>
-                    )}
-                  </section>
-                </div>
+              Now: one tracked line carrying type and credits across the full
+              width, the title and its original beneath it, and the record's
+              own fields as a single ruled row of inline label-value pairs.
+              Same facts, a third of the height, and the hierarchy is
+              stronger for it because the title is the only large thing.
+            */}
+            <div className="mx-auto max-w-page px-5 py-7 sm:px-6 md:py-9 lg:px-10">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2">
+                <p className="type-label text-accent">
+                  {[work.domain.name, work.media_format].filter(Boolean).join(' // ')}
+                </p>
+                <p className="type-body-sm text-paper-faint">
+                  <span className="type-label text-paper-faint">Credited </span>
+                  {work.creators.length > 0
+                    ? creditLine(work.creators)
+                    : 'No credits recorded'}
+                </p>
               </div>
+
+              <h1 className="type-display mt-3 text-paper lg:text-[3rem] lg:leading-[1.05]">
+                {work.title}
+              </h1>
+              {work.original_title && work.original_title !== work.title && (
+                <p className="mt-1.5 font-display text-lg font-light italic text-paper-dim">
+                  {work.original_title}
+                </p>
+              )}
+
+              {/*
+                The record's fields on one line. Inline label-value pairs
+                rather than stacked cells -- the same structure every medium
+                gets, so a novel, a series and a manga are described by the
+                same row with different values in it. Where a medium later
+                carries real unit counts, they become another pair here.
+              */}
+              <dl className="mt-5 flex flex-wrap items-baseline gap-x-8 gap-y-2 border-t border-paper/10 pt-4">
+                {[
+                  { label: 'Medium', value: work.domain.name },
+                  work.media_format && { label: 'Format', value: work.media_format },
+                  work.year !== null && { label: 'Year', value: String(work.year) },
+                  work.source && { label: 'Record source', value: work.source },
+                ]
+                  .filter((entry): entry is { label: string; value: string } => Boolean(entry))
+                  .map((entry) => (
+                    <div key={entry.label} className="flex items-baseline gap-2">
+                      <dt className="type-label text-paper-faint">{entry.label}</dt>
+                      <dd className="type-body text-paper">{entry.value}</dd>
+                    </div>
+                  ))}
+              </dl>
             </div>
           </header>
         ) : (
@@ -294,76 +326,128 @@ export default function WorkPage({
 
       {work && !loading && (
         <>
-          {/* --- what this work is said to be ------------------------- */}
-          <section
-            aria-labelledby="metadata-heading"
-            className="border-b border-paper/10 bg-surface"
-          >
-            <h2 id="metadata-heading" className="sr-only">
-              How this work is classified
-            </h2>
-            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-16 lg:px-10">
-              <div className="grid gap-12 md:grid-cols-2 md:gap-16 md:divide-x md:divide-paper/10">
-                <div className="md:pr-16">
-                  <h3 className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+          {/*
+            The dossier body: a four-column rail of plate and classification
+            against an eight-column reading canvas.
+
+            This is the export's composition and it replaces two stacked
+            full-width bands. The difference is not decoration -- the rail
+            holds what the catalogue says about the work and the canvas holds
+            what there is to read and what the reader did, so the
+            canonical/personal split runs down the page as a rule rather than
+            being asserted by two headings a screen apart.
+          */}
+          <div className="mx-auto grid max-w-page gap-x-10 gap-y-8 px-5 py-8 sm:px-6 md:py-10 lg:grid-cols-12 lg:px-10">
+            {/* --- the rail: what this work is said to be ------------- */}
+            <section
+              aria-labelledby="metadata-heading"
+              className="lg:col-span-4 lg:sticky lg:top-28 lg:self-start"
+            >
+              <h2 id="metadata-heading" className="sr-only">
+                How this work is classified
+              </h2>
+              <SectionMarker index="01" label="Plate and classification" />
+
+              {/*
+                The artwork fills the rail. No inner frame and no padding:
+                the column edge is the frame, and the plate is the one thing
+                on this page that is allowed to be large.
+              */}
+              <div className="mt-4 w-44 sm:w-56 lg:w-full">
+                <WorkPlate work={work} priority />
+              </div>
+
+              <div className="mt-5 divide-y divide-paper/10 border-t border-paper/10">
+                <div className="py-4">
+                  <h3 className="type-label text-paper-faint">
                     Themes
                   </h3>
-                  <p className="mt-4 max-w-md text-[0.85rem] leading-relaxed text-paper-dim">
-                    Noema&rsquo;s own vocabulary, shared across every medium. This is
-                    what your taste profile is built from.
+                  <p className="type-body-sm mt-1.5 text-paper-faint">
+                    Noema&rsquo;s own vocabulary, shared across every medium.
                   </p>
                   {work.concepts.length > 0 ? (
                     <LabelList
                       items={work.concepts.map((concept) => concept.name)}
                       noun="themes"
                       limit={6}
-                      className="mt-6 font-display text-lg font-light leading-relaxed text-paper"
+                      className="mt-3 font-display text-base font-light leading-relaxed text-paper"
                     />
                   ) : (
-                    <p className="mt-6 font-display text-lg font-light italic text-paper-faint">
+                    <p className="mt-3 font-display text-base font-light italic text-paper-faint">
                       No themes associated with this work yet. That is a gap in
                       Noema&rsquo;s data, not a statement about the work.
                     </p>
                   )}
                 </div>
 
-                <div className="md:pl-16">
-                  <h3 className="text-[0.66rem] uppercase tracking-label text-paper-faint">
+                <div className="py-4">
+                  <h3 className="type-label text-paper-faint">
                     Genres
                   </h3>
-                  <p className="mt-4 max-w-md text-[0.85rem] leading-relaxed text-paper-dim">
-                    As stated by {work.source ?? 'the source'}. Source labels, kept
-                    as given and never merged with Noema&rsquo;s vocabulary.
+                  <p className="type-body-sm mt-1.5 text-paper-faint">
+                    As stated by {work.source ?? 'the source'}, kept as given.
                   </p>
                   {work.genres.length > 0 ? (
                     <LabelList
                       items={work.genres}
                       noun="genres"
                       limit={6}
-                      className="mt-6 font-display text-lg font-light leading-relaxed text-paper"
+                      className="mt-3 font-display text-base font-light leading-relaxed text-paper"
                     />
                   ) : (
-                    <p className="mt-6 font-display text-lg font-light italic text-paper-faint">
+                    <p className="mt-3 font-display text-base font-light italic text-paper-faint">
                       This source states no genres for this work.
                     </p>
                   )}
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
 
-          {/* --- you and this work ------------------------------------ */}
-          <section aria-labelledby="your-state-heading" className="border-b border-paper/10">
-            <div className="mx-auto max-w-page px-5 py-14 sm:px-6 md:py-20 lg:px-10">
-              <p className="text-[0.66rem] uppercase tracking-label text-paper-faint">
-                Yours alone
-              </p>
-              <h2
-                id="your-state-heading"
-                className="mt-4 font-display text-3xl font-light leading-[1.1] text-paper md:text-[2.4rem]"
+            {/* --- the canvas: the reading, then the reader ----------- */}
+            <div className="lg:col-span-8">
+              <section
+                aria-labelledby="synopsis-heading"
+                className="border border-paper/10 bg-ink p-5 md:p-6"
               >
-                You and this work
-              </h2>
+                <p className="type-label border-b border-paper/10 pb-3 text-paper">
+                  Canonical synopsis
+                </p>
+                {/*
+                  No visible heading beyond that label: the synopsis is the
+                  subject of the page. The region is still named for
+                  assistive technology.
+                */}
+                <h2 id="synopsis-heading" className="sr-only">
+                  Synopsis
+                </h2>
+                {work.synopsis ? (
+                  <p className="mt-4 font-display text-lg font-light leading-relaxed text-paper">
+                    {work.synopsis}
+                  </p>
+                ) : (
+                  <p className="mt-4 font-display text-lg font-light italic leading-relaxed text-paper-faint">
+                    No synopsis available. The source that supplied this record did not
+                    include one.
+                  </p>
+                )}
+              </section>
+
+              {/*
+                The reader's half, framed and pinned with an accent rule down
+                its leading edge -- the export's one device for "this is
+                yours, and it is not part of the record above".
+              */}
+              <section
+                aria-labelledby="your-state-heading"
+                className="mt-6 border border-l-2 border-paper/10 border-l-accent bg-ink p-5 md:p-6"
+              >
+                <SectionMarker index="02" label="Your relationship // personal folio" />
+                <h2
+                  id="your-state-heading"
+                  className="type-headline-lg mt-5 text-paper md:text-[1.9rem] md:leading-[1.15]"
+                >
+                  You and this work
+                </h2>
 
               {!account ? (
                 <div className="mt-10">
@@ -494,8 +578,9 @@ export default function WorkPage({
                   />
                 </div>
               )}
+              </section>
             </div>
-          </section>
+          </div>
 
           {/* --- where the record came from --------------------------- */}
           <section className="mx-auto max-w-page px-5 py-12 sm:px-6 lg:px-10">
